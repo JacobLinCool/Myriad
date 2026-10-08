@@ -1,0 +1,70 @@
+{
+  "title": "Prefix Sum Queries",
+  "order": 1,
+  "limits": {
+    "instructionBudget": 50000000,
+    "logicalTimeLimitMs": 2000,
+    "memoryMb": 128,
+    "outputLimitBytes": 10485760
+  },
+  "normalize": "trim",
+  "groups": [
+    {
+      "name": "Subtask 1: Small queries (N, Q <= 10)",
+      "tests": [
+        "01.in",
+        "02.in",
+        "03.in",
+        "04.in",
+        "05.in"
+      ]
+    },
+    {
+      "name": "Subtask 2: Numbers up to 100 (N, Q <= 100)",
+      "tests": [
+        "06.in",
+        "07.in",
+        "08.in",
+        "09.in",
+        "10.in"
+      ]
+    },
+    {
+      "name": "Subtask 3: Non-negative array (N, Q <= 1,000)",
+      "tests": [
+        "11.in",
+        "12.in",
+        "13.in",
+        "14.in",
+        "15.in"
+      ]
+    },
+    {
+      "name": "Subtask 4: Large numbers (N, Q <= 5,000)",
+      "tests": [
+        "16.in",
+        "17.in",
+        "18.in",
+        "19.in",
+        "20.in"
+      ]
+    },
+    {
+      "name": "Subtask 5: Full scale queries (N, Q <= 10,000)",
+      "tests": [
+        "21.in",
+        "22.in",
+        "23.in",
+        "24.in",
+        "25.in"
+      ]
+    }
+  ],
+  "sampleCases": [
+    {
+      "input": "5 3\n1 2 3 4 5\n1 3\n2 5\n1 5\n",
+      "output": "6\n14\n15\n",
+      "explanation": "Sum from index 1 to 3 is 1 + 2 + 3 = 6."
+    }
+  ]
+}

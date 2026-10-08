@@ -1,0 +1,75 @@
+{
+  "title": "A + B Problem",
+  "order": 0,
+  "limits": {
+    "instructionBudget": 50000000,
+    "logicalTimeLimitMs": 2000,
+    "memoryMb": 128,
+    "outputLimitBytes": 10485760
+  },
+  "normalize": "trim",
+  "groups": [
+    {
+      "name": "Subtask 1: Small numbers (0 to 10)",
+      "tests": [
+        "01.in",
+        "02.in",
+        "03.in",
+        "04.in",
+        "05.in"
+      ]
+    },
+    {
+      "name": "Subtask 2: Numbers up to 1,000",
+      "tests": [
+        "06.in",
+        "07.in",
+        "08.in",
+        "09.in",
+        "10.in"
+      ]
+    },
+    {
+      "name": "Subtask 3: Negative numbers (-10^5 to 10^5)",
+      "tests": [
+        "11.in",
+        "12.in",
+        "13.in",
+        "14.in",
+        "15.in"
+      ]
+    },
+    {
+      "name": "Subtask 4: Large 32-bit range (up to 10^9)",
+      "tests": [
+        "16.in",
+        "17.in",
+        "18.in",
+        "19.in",
+        "20.in"
+      ]
+    },
+    {
+      "name": "Subtask 5: 64-bit full range (up to 10^18)",
+      "tests": [
+        "21.in",
+        "22.in",
+        "23.in",
+        "24.in",
+        "25.in"
+      ]
+    }
+  ],
+  "sampleCases": [
+    {
+      "input": "1 2\n",
+      "output": "3\n",
+      "explanation": "1 + 2 = 3"
+    },
+    {
+      "input": "-50 50\n",
+      "output": "0\n",
+      "explanation": "-50 + 50 = 0"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+allowBuilds:
+  esbuild: true
+  sharp: true
+  workerd: true
+minimumReleaseAgeExclude:
+  - '@wasm-oj/contracts@0.2.3'
+  - '@wasm-oj/core@0.2.3'
+  - '@wasm-oj/server@0.2.3'
+  - '@wasm-oj/browser@0.2.3'

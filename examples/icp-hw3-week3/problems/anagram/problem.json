@@ -1,0 +1,59 @@
+{
+  "title": "變位字",
+  "order": 1,
+  "sampleCases": [
+    {
+      "input": "2\nsmartest\nmattress\ndumbest\nstumble\n",
+      "output": "The words are anagrams.\nThe words are not anagrams.\n"
+    }
+  ],
+  "normalize": "trim",
+  "limits": {
+    "instructionBudget": 50000000,
+    "logicalTimeLimitMs": 2000,
+    "memoryMb": 64,
+    "outputLimitBytes": 262144
+  },
+  "groups": [
+    {
+      "name": "子任務 1：小寫、長度相同",
+      "tests": [
+        "01.in",
+        "02.in",
+        "03.in",
+        "04.in",
+        "05.in"
+      ]
+    },
+    {
+      "name": "子任務 2：長度可能不同",
+      "tests": [
+        "06.in",
+        "07.in",
+        "08.in",
+        "09.in",
+        "10.in"
+      ]
+    },
+    {
+      "name": "子任務 3：大小寫混合",
+      "tests": [
+        "11.in",
+        "12.in",
+        "13.in",
+        "14.in",
+        "15.in"
+      ]
+    },
+    {
+      "name": "子任務 4：綜合",
+      "tests": [
+        "16.in",
+        "17.in",
+        "18.in",
+        "19.in",
+        "20.in"
+      ]
+    }
+  ]
+}

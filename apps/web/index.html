@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Myriad</title>
+    <meta name="description" content="Reimagining programming exams and real-time online judging." />
+    <meta name="theme-color" content="#181818" />
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Myriad" />
+    <meta property="og:title" content="Myriad" />
+    <meta property="og:description" content="Reimagining programming exams and real-time online judging." />
+    <meta property="og:url" content="https://judge.nycu.ai/" />
+    <meta property="og:image" content="https://judge.nycu.ai/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Myriad: a field of judging nodes, with the lit ones forming a check." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Myriad" />
+    <meta name="twitter:description" content="Reimagining programming exams and real-time online judging." />
+    <meta name="twitter:image" content="https://judge.nycu.ai/og.png" />
+    <meta name="color-scheme" content="dark" />
+    <style>
+      /* Paints the shell before the application bundle arrives. */
+      html, body { margin: 0; height: 100%; background: #181818; }
+      .boot { height: 100dvh; display: grid; grid-template-columns: 56px 240px 1fr; }
+      .boot > div:nth-child(1) { background: #2d2d2d; }
+      .boot > div:nth-child(2) { background: #222; border-right: 1px solid #363636; }
+      .boot > div:nth-child(3) { display: grid; grid-template-rows: 55px 1fr; }
+      .boot > div:nth-child(3) > div { background: #2d2d2d; border-bottom: 1px solid #363636; }
+      @media (max-width: 1099px) { .boot { grid-template-columns: 56px 1fr; } .boot > div:nth-child(2) { display: none; } }
+      @media (max-width: 650px) { .boot { grid-template-columns: 44px 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div id="app"><div class="boot" aria-hidden="true"><div></div><div></div><div><div></div></div></div></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

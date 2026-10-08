@@ -1,0 +1,68 @@
+{
+  "title": "最大公因數",
+  "order": 0,
+  "sampleCases": [
+    {
+      "input": "2\n12 18\n24 36\n",
+      "output": "GCD: 6\nGCD: 12\n"
+    },
+    {
+      "input": "3\n7 5\n0 9\n-8 12\n",
+      "output": "GCD: 1\nGCD: 9\nGCD: 4\n"
+    }
+  ],
+  "normalize": "trim",
+  "limits": {
+    "instructionBudget": 200000000,
+    "logicalTimeLimitMs": 2000,
+    "memoryMb": 64,
+    "outputLimitBytes": 262144
+  },
+  "groups": [
+    {
+      "name": "子任務 1：一般情況",
+      "tests": [
+        "01.in",
+        "02.in",
+        "03.in",
+        "04.in"
+      ]
+    },
+    {
+      "name": "子任務 2：互質",
+      "tests": [
+        "05.in",
+        "06.in",
+        "07.in",
+        "08.in"
+      ]
+    },
+    {
+      "name": "子任務 3：整除或相等",
+      "tests": [
+        "09.in",
+        "10.in",
+        "11.in",
+        "12.in"
+      ]
+    },
+    {
+      "name": "子任務 4：零",
+      "tests": [
+        "13.in",
+        "14.in",
+        "15.in",
+        "16.in"
+      ]
+    },
+    {
+      "name": "子任務 5：負數",
+      "tests": [
+        "17.in",
+        "18.in",
+        "19.in",
+        "20.in"
+      ]
+    }
+  ]
+}

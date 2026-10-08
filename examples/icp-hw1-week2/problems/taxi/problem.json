@@ -1,0 +1,60 @@
+{
+  "title": "計程車費分攤",
+  "order": 1,
+  "sampleCases": [
+    {
+      "input": "2\n80 25 10 3\n85 20 7 4\n",
+      "output": "Total Fare = NT$330, Each Passenger Pays = NT$110.00\nTotal Fare = NT$225, Each Passenger Pays = NT$56.25\n"
+    }
+  ],
+  "normalize": "trim",
+  "limits": {
+    "instructionBudget": 50000000,
+    "logicalTimeLimitMs": 2000,
+    "memoryMb": 64,
+    "outputLimitBytes": 262144
+  },
+  "groups": [
+    {
+      "name": "子任務 1：可以整除",
+      "tests": [
+        "01.in",
+        "02.in",
+        "03.in",
+        "04.in",
+        "05.in"
+      ]
+    },
+    {
+      "name": "子任務 2：不能整除",
+      "tests": [
+        "06.in",
+        "07.in",
+        "08.in",
+        "09.in",
+        "10.in",
+        "11.in"
+      ]
+    },
+    {
+      "name": "子任務 3：邊界情況",
+      "tests": [
+        "12.in",
+        "13.in",
+        "14.in",
+        "15.in",
+        "16.in"
+      ]
+    },
+    {
+      "name": "子任務 4：較大數值",
+      "tests": [
+        "17.in",
+        "18.in",
+        "19.in",
+        "20.in",
+        "21.in"
+      ]
+    }
+  ]
+}

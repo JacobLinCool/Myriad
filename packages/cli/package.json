@@ -1,0 +1,29 @@
+{
+  "name": "@myriad/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "myriad": "./bin/myriad.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@myriad/shared": "workspace:*",
+    "@wasm-oj/contracts": "0.2.3",
+    "@wasm-oj/core": "0.2.3",
+    "@wasm-oj/server": "0.2.3",
+    "@wasm-oj/toolchain-clang": "0.2.0",
+    "commander": "^13.1.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.7"
+  }
+}

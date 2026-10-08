@@ -1,0 +1,66 @@
+# Frontend architecture
+
+The application uses Svelte 5 and a shared dark theme. Components share the design tokens and base styles imported by `src/app.css`; they are reusable within this application, rather than a separately packaged UI library.
+
+## Boundaries
+
+- `App.svelte` composes navigation, pages and the identity dialog.
+- `lib/ui/` contains domain-independent interaction primitives. These components do not read local storage, call APIs, or know exam/student identifiers.
+- `lib/student/` contains exam pages and workspace panels. Each panel receives only the session fields and actions it consumes through a typed `Pick<StudentSession, ...>`; the workspace composes its child panels.
+- `lib/teacher/` contains the teacher page, analytics, reports and typed export operations.
+- `lib/state/student.svelte.ts` owns navigation, server-adjusted time, identity and request lifetimes. `execution.ts` owns preparation, local execution and submission snapshots. `drafts.ts` owns persisted document keys; `routes.ts` validates route shapes.
+- `lib/state/teacher.svelte.ts` keeps authentication, selection and export operations in separate request lifetimes. `requests.ts` cancels superseded work and protects against late responses, including A → B → A selections.
+- `engine.ts`, `telemetry.ts` and `device.ts` retain their execution/telemetry/device responsibilities. `engine-status.ts` holds the compiler status subscription so the shell can show it without loading the runtime.
+- `lazy.svelte.ts` wraps code-split modules; `motion.ts` owns view transitions, idle scheduling and the data-saver check used by every speculative download.
+
+## Interaction contracts
+
+| Component     | Contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IconButton`  | Required accessible `label`, optional selected styling, standard button attributes and a child snippet. Defaults to `type="button"`.                                                                                                                                                                                                                                                                                                                                            |
+| `Select`      | Controlled string `value` and `onchange`; uniquely valued options. Generated or explicit ID. Keyboard arrows, Home/End, Escape, Tab and typeahead. Focus remains on the combobox. Popup is positioned against the viewport and mounted into the containing dialog or document body. Empty/disabled option sets close the popup; removed active options are reconciled.                                                                                                          |
+| `Collapsible` | Bindable `open`, title and content snippet. Native button keyboard behavior and a labeled content region. Consumer content keeps its own typography and table styles.                                                                                                                                                                                                                                                                                                           |
+| `Dialog`      | Bindable `open`, title and content snippet. Native modal focus containment, Escape dismissal, and focus restoration on close or unmount.                                                                                                                                                                                                                                                                                                                                        |
+| `Tabs`        | Bindable `value`, items, accessible label, optional icon snippet and content snippet. The caller supplies a value present in the item list. Roving tab focus, left/right arrows and Home/End; one labeled panel. Nested tab sets maintain independent focus navigation.                                                                                                                                                                                                         |
+| `SplitPane`   | A vertical divider for its containing pane. Bindable percentage, min/max, label and change callback. Keyboard range input plus pointer capture; canceled/lost pointers stop resizing. The caller owns layout and persistence.                                                                                                                                                                                                                                                   |
+| `Markdown`    | Renders sanitized Markdown with math from a `source` string. Loads the Markdown/KaTeX chunk on first use, shows line skeletons meanwhile and falls back to plain text if the chunk fails. Its module export `markdown` allows idle prefetch.                                                                                                                                                                                                                                    |
+| `indicator`   | Svelte action for an `.indicator-host` that slides one shared selection surface to the child matching a selector. First placement is immediate; removal and reappearance do not animate. Consumers style `::before` and hide per-item selection once `[data-indicator]` is present.                                                                                                                                                                                             |
+| `CCodeEditor` | C-specific CodeMirror integration with bindable code, font size, change callback and required document key. Completion sources and lightweight formatting live in `student/c-editing.ts`; the exported `format()` applies them as one undoable edit and returns false when the code is already tidy. Changing the document key creates a fresh editor state, including undo history and selection. External content synchronization does not trigger a user-edit save callback. |
+
+## Loading and prefetch
+
+The entry chunk contains the shell, exam list and overview. The workspace (CodeMirror), teacher page, Markdown/KaTeX and the compiler runtime are separate chunks. `App.svelte` loads the workspace and teacher chunks on their routes and idle-prefetches the workspace whenever an exam is open; the Markdown chunk is idle-prefetched from any page. A static boot shell in `index.html` paints the frame before the bundle arrives.
+
+`loading` means the route has nothing to show yet and selects a layout-shaped skeleton; `refreshing` covers any route request, including revalidation of visible data. Moving between routes of the same exam keeps the exam, its history and the workspace mounted; the target draft opens synchronously and the exam revalidates in the background. A different exam, or any failed reload, still clears the exam. Once the exam record applies, submission history continues to load behind it (`historyBusy`).
+
+Hovering, focusing or pressing an exam row prefetches that exam. A prefetched response is consumed once, expires after 10 seconds and is discarded at exam start/end boundaries; when it has already settled it applies synchronously so the view transition captures the final page. The server time offset uses the moment each response was received, never the moment it was used. After an exam loads, the compiler is downloaded and started in idle time. All speculative downloads are skipped with Save-Data or 2G connections.
+
+## Replaced problems and edited settings
+
+Uploads may replace the current problems at any time. Each problem carries a teacher-built `version`; submissions send it as `problemVersion`, and a 409 means the problem's judged content changed, so the session revalidates in place and the judge panel explains. `revalidate()` also runs every 60 seconds and when the tab becomes visible, replacing the exam object without resetting outputs, drafts or the editor, so extended times, edited rules and replaced statements appear on their own. Test inputs are fetched by problem version, letting an attempt started before a replacement finish on its own version. The teacher workspace shows exam detail read-only except for the settings form (`saveSettings`), which applies immediately.
+
+## Teacher preview
+
+Opening `/exams/<id>?preview=1` stores the exam in session storage for the tab and strips the query. While an exam is requested for preview, exam, history, test-input, attempt and WebSocket requests carry `preview=1`; the Worker grants it only to the owner's teacher session and marks the response with `preview: true`. `previewing` reflects that grant, and `started` (previewing or past the start) gates submission, history and navigation instead of the raw start time. Preview work uses a separate pending-submission key and a silent telemetry recorder. The banner explains the mode, or that the teacher session is missing, and `exitPreview` returns to the student view.
+
+## Data consistency
+
+Navigation and identity transitions save the active document before changing its key. A draft key includes student, exam and problem. Route loading clears the previous exam so a failed request cannot leave another exam visible under a new URL.
+
+Every run/submission captures code, student, exam, problem and route generation before awaiting work. Results update the UI only while that context remains current. The engine subscription is released with the session. Submission persistence and reconnection remain owned by the existing attempt lifecycle.
+
+Teacher export captures its exam ID before the first page and uses that ID for all pages and the filename. Pagination rejects non-advancing cursors. Switching the displayed exam may proceed while the original export completes; logging out or unmounting cancels it and suppresses download. Older selection requests cannot replace current data, error messages or loading flags.
+
+## Motion
+
+`navigate` and history pops apply their synchronous state change inside `document.startViewTransition` when supported and motion is not reduced; the root cross-fades and named elements (`exam-title-<id>`) morph. The returned promise resolves after the update has run, so callers may await navigation as before. Selection surfaces (rail, problem list, tab underline) slide via the `indicator` action. Drawers reveal with `clip-path` and close faster than they open. Inserted feedback uses the shared `.reveal` entrance; the judge panel streams keyed verdict rows, a hairline progress bar driven by received verdicts over `testCount`, and a count-up of the saved score whose final value is exposed to assistive technology immediately.
+
+## Styles
+
+`styles/tokens.css` is the source of semantic colors, radii, shadows, main column widths and motion durations/easing. `styles/base.css` also holds the shared `.skeleton`, `.reveal`, `.spin`, `.progress-track` and `.indicator-host` utilities and the view-transition defaults. It contains typography, native controls, focus treatment and deliberately shared page/content utilities. Feature and responsive layout rules live with their owning Svelte component. Selectors crossing a component boundary are explicit `:global(...)` descendants of an owning layout root. CodeMirror reads the same theme variables.
+
+## Validation
+
+Run `pnpm --filter=@myriad/web test`, `pnpm --filter=@myriad/web exec svelte-check --threshold warning`, and `pnpm build`. `pnpm test` also covers the shared contracts, CLI and actual Worker/D1 lifecycle.
+
+Component tests mount real Svelte components in JSDOM; native layout, dialog focus containment, pointer behavior and WASM execution also require browser checks. The test suite covers same-exam navigation continuity, prefetch consumption and offsets, judge progress, keyboard selection/dismissal, option mutation, popup bounds, tab focus, dialog/disclosure behavior, divider cancellation, editor undo isolation, stale requests, export pagination, identity/draft isolation and execution snapshots. Browser checks use the local Worker preview at desktop, tablet and mobile widths.

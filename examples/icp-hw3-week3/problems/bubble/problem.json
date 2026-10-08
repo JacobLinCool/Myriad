@@ -1,0 +1,59 @@
+{
+  "title": "氣泡排序",
+  "order": 0,
+  "sampleCases": [
+    {
+      "input": "2\n5 3 8 1 9 2 7 4\n10 -3 7 7 0 25 -3 1\n",
+      "output": "1 2 3 4 5 7 8 9\n-3 -3 0 1 7 7 10 25\n"
+    }
+  ],
+  "normalize": "trim",
+  "limits": {
+    "instructionBudget": 50000000,
+    "logicalTimeLimitMs": 2000,
+    "memoryMb": 64,
+    "outputLimitBytes": 262144
+  },
+  "groups": [
+    {
+      "name": "子任務 1：互不相同",
+      "tests": [
+        "01.in",
+        "02.in",
+        "03.in",
+        "04.in",
+        "05.in"
+      ]
+    },
+    {
+      "name": "子任務 2：可能重複",
+      "tests": [
+        "06.in",
+        "07.in",
+        "08.in",
+        "09.in",
+        "10.in"
+      ]
+    },
+    {
+      "name": "子任務 3：負整數",
+      "tests": [
+        "11.in",
+        "12.in",
+        "13.in",
+        "14.in",
+        "15.in"
+      ]
+    },
+    {
+      "name": "子任務 4：綜合",
+      "tests": [
+        "16.in",
+        "17.in",
+        "18.in",
+        "19.in",
+        "20.in"
+      ]
+    }
+  ]
+}

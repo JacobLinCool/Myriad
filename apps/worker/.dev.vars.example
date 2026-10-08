@@ -1,0 +1,5 @@
+ADMIN_TOKEN=replace-with-random-admin-secret
+ATTEMPT_SECRET=replace-with-at-least-32-random-characters
+APP_ORIGIN=http://localhost:8787
+NYCU_CLIENT_ID=
+NYCU_CLIENT_SECRET=

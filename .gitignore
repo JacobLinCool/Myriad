@@ -1,3 +1,9 @@
+.wasm-oj-cache/
+.myriad/
+report/
+.wrangler/
+dist/
+
 # Logs
 logs
 *.log
@@ -134,3 +140,12 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Private artifact guidance
+*.shadow.md
+
+.dev.vars
+.impeccable/review/
+
+# macOS
+.DS_Store

@@ -1,0 +1,19 @@
+{
+  "name": "myriad-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --filter=@myriad/shared build && pnpm --filter=@myriad/cli build && pnpm --filter=@myriad/worker typecheck && pnpm --filter=@myriad/web build",
+    "test": "pnpm -r test",
+    "dev:worker": "pnpm --filter=@myriad/worker dev",
+    "dev:web": "pnpm --filter=@myriad/web dev",
+    "dev": "pnpm --filter=@myriad/worker dev"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.9",
+    "prettier-plugin-svelte": "^3.5.2",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.7"
+  }
+}

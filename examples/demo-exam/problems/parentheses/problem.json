@@ -1,0 +1,80 @@
+{
+  "title": "Valid Parentheses",
+  "order": 3,
+  "limits": {
+    "instructionBudget": 50000000,
+    "logicalTimeLimitMs": 2000,
+    "memoryMb": 128,
+    "outputLimitBytes": 10485760
+  },
+  "normalize": "trim",
+  "groups": [
+    {
+      "name": "Subtask 1: Simple parentheses (length <= 10)",
+      "tests": [
+        "01.in",
+        "02.in",
+        "03.in",
+        "04.in",
+        "05.in"
+      ]
+    },
+    {
+      "name": "Subtask 2: Longer parentheses (length <= 1,000)",
+      "tests": [
+        "06.in",
+        "07.in",
+        "08.in",
+        "09.in",
+        "10.in"
+      ]
+    },
+    {
+      "name": "Subtask 3: Mixed brackets (length <= 50)",
+      "tests": [
+        "11.in",
+        "12.in",
+        "13.in",
+        "14.in",
+        "15.in"
+      ]
+    },
+    {
+      "name": "Subtask 4: Mixed brackets (length <= 2,000)",
+      "tests": [
+        "16.in",
+        "17.in",
+        "18.in",
+        "19.in",
+        "20.in"
+      ]
+    },
+    {
+      "name": "Subtask 5: Deep nesting (length <= 50,000)",
+      "tests": [
+        "21.in",
+        "22.in",
+        "23.in",
+        "24.in",
+        "25.in"
+      ]
+    }
+  ],
+  "sampleCases": [
+    {
+      "input": "()[]{}\n",
+      "output": "YES\n",
+      "explanation": "All open brackets close in order."
+    },
+    {
+      "input": "(]\n",
+      "output": "NO\n",
+      "explanation": "Square bracket does not match parenthesis."
+    },
+    {
+      "input": "([)]\n",
+      "output": "NO\n",
+      "explanation": "Brackets close out of order."
+    }
+  ]
+}

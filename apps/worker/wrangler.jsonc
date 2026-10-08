@@ -1,0 +1,64 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "myriad-worker",
+  "account_id": "b1c3d1b89f9131a84a0f1f6a973232f1",
+  "routes": [
+    {
+      "pattern": "judge.nycu.ai",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "APP_ORIGIN": "https://judge.nycu.ai",
+    "NYCU_CLIENT_ID": "tiTEbRlHeXFV17uUH8C3fad5H7nCjHhNKwJuQ8MW"
+  },
+  "main": "src/index.ts",
+  "compatibility_date": "2024-10-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "myriad_d1",
+      "database_id": "8156f0ed-c9d2-458d-89fc-a93cea166570",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "myriad-bucket"
+    }
+  ],
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "env": {
+    "local": {
+      "routes": [],
+      "vars": {
+        "APP_ORIGIN": "http://localhost:8787",
+        "NYCU_CLIENT_ID": "tiTEbRlHeXFV17uUH8C3fad5H7nCjHhNKwJuQ8MW"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "myriad_d1",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "BUCKET",
+          "bucket_name": "myriad-bucket"
+        }
+      ]
+    }
+  }
+}

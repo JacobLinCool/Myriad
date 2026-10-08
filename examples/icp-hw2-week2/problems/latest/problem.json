@@ -1,0 +1,59 @@
+{
+  "title": "最晚的日期",
+  "order": 1,
+  "sampleCases": [
+    {
+      "input": "3/6/08\n15/4/07\n6/3/09\n5/17/07\n0/0/0\n",
+      "output": "Invalid month! Please enter again.\n6/3/09 is the latest date\n"
+    }
+  ],
+  "normalize": "trim",
+  "limits": {
+    "instructionBudget": 50000000,
+    "logicalTimeLimitMs": 2000,
+    "memoryMb": 64,
+    "outputLimitBytes": 65536
+  },
+  "groups": [
+    {
+      "name": "子任務 1：月份都合法",
+      "tests": [
+        "01.in",
+        "02.in",
+        "03.in",
+        "04.in",
+        "05.in"
+      ]
+    },
+    {
+      "name": "子任務 2：相同年份或月份",
+      "tests": [
+        "06.in",
+        "07.in",
+        "08.in",
+        "09.in",
+        "10.in"
+      ]
+    },
+    {
+      "name": "子任務 3：不合法的月份",
+      "tests": [
+        "11.in",
+        "12.in",
+        "13.in",
+        "14.in",
+        "15.in"
+      ]
+    },
+    {
+      "name": "子任務 4：較多日期",
+      "tests": [
+        "16.in",
+        "17.in",
+        "18.in",
+        "19.in",
+        "20.in"
+      ]
+    }
+  ]
+}

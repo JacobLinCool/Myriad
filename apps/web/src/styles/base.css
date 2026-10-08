@@ -1,0 +1,492 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+button,
+a,
+input,
+textarea,
+select,
+[tabindex] {
+  outline-offset: 3px;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--focus);
+}
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: inherit;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    opacity var(--duration-fast) ease,
+    transform var(--duration-press) var(--ease-out);
+}
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+button:hover:not(:disabled) {
+  background: var(--hover);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+button.primary {
+  background: var(--primary);
+  color: var(--surface);
+  border-color: transparent;
+  font-weight: 600;
+}
+button.primary:hover:not(:disabled) {
+  background: var(--text);
+}
+a {
+  color: var(--link);
+  text-underline-offset: 3px;
+}
+h1 {
+  font-size: 27px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  margin: 0 0 12px;
+}
+h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 25px 0 12px;
+}
+h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 18px 0 10px;
+}
+p {
+  line-height: 1.7;
+  margin: 8px 0 16px;
+  color: var(--muted);
+}
+small,
+.muted {
+  color: var(--muted);
+}
+small {
+  font-size: 12px;
+}
+code,
+pre,
+textarea {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+pre {
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+  background: var(--surface-editor);
+  padding: 12px;
+  border-radius: 6px;
+  overflow: auto;
+}
+input,
+textarea,
+select {
+  background: var(--surface-editor);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 10px;
+  color: var(--text);
+  width: 100%;
+  caret-color: var(--caret);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+}
+label {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  margin: 12px 0 7px;
+}
+::selection {
+  background: var(--selected);
+  color: var(--text);
+}
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+.rail-spacer,
+.grow {
+  flex: 1;
+}
+.inset {
+  padding: 0 8px;
+}
+.urgent {
+  color: var(--warning);
+}
+.page-content {
+  padding: 38px 42px;
+  max-width: 1120px;
+  width: 100%;
+  margin: 0 auto;
+  overflow: auto;
+  flex: 1;
+}
+.page-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 28px;
+}
+.page-heading p {
+  margin-bottom: 0;
+}
+.status-badge {
+  border: 1px solid var(--border);
+  padding: 4px 9px;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.empty {
+  padding: 50px 20px;
+  color: var(--muted);
+  text-align: center;
+}
+.empty h2 {
+  color: var(--text);
+}
+.error,
+.error-banner {
+  color: var(--danger);
+}
+.error-banner {
+  padding: 10px 18px;
+  background: var(--danger-surface);
+  border-bottom: 1px solid var(--danger-border);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 12px;
+}
+.error-banner span {
+  flex: 1;
+}
+.error-banner button {
+  font-size: 11px;
+  padding: 5px 8px;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 14px 0;
+}
+.pane-heading {
+  height: 38px;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.pane-heading > span {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  flex: 1;
+}
+.pane-heading button {
+  border: 0;
+  background: none;
+  padding: 4px;
+}
+.statement-prose {
+  font-size: 14px;
+  line-height: 1.7;
+  padding: 20px 24px;
+  overflow: auto;
+  min-height: 0;
+}
+.statement-prose h1 {
+  font-size: 23px;
+}
+.statement-prose h2 {
+  font-size: 17px;
+}
+.statement-prose p {
+  max-width: 75ch;
+}
+.statement-prose ul {
+  padding-left: 22px;
+  list-style: disc;
+}
+.statement-prose ol {
+  padding-left: 22px;
+  list-style: decimal;
+}
+.statement-prose code:not(pre code) {
+  background: var(--selected);
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 0.9em;
+}
+.pass {
+  color: var(--success);
+}
+.table-scroll {
+  overflow: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+th,
+td {
+  text-align: left;
+  padding: 13px 10px;
+  border-bottom: 1px solid var(--border);
+}
+th {
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.katex-display {
+  overflow: auto;
+}
+.katex {
+  font-size: 1.05em;
+}
+@media (max-width: 1099px) {
+  .page-content {
+    padding: 28px;
+  }
+}
+@media (max-width: 650px) {
+  .page-content {
+    padding: 24px 18px;
+  }
+  .page-heading {
+    flex-wrap: wrap;
+  }
+  .page-heading h1 {
+    font-size: 24px;
+  }
+  .status-badge {
+    font-size: 10px;
+  }
+  .pane-heading small {
+    font-size: 10px;
+  }
+  .statement-prose {
+    padding: 18px;
+  }
+  .error-banner {
+    padding: 8px;
+    font-size: 11px;
+  }
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Loading placeholders mirror the final layout so content replaces them in place. */
+.skeleton {
+  display: block;
+  height: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--skeleton)
+    linear-gradient(
+      90deg,
+      transparent 0,
+      var(--skeleton-sheen) 50%,
+      transparent 100%
+    )
+    no-repeat;
+  background-size: 50% 100%;
+  animation: skeleton-sheen 1.4s var(--ease-in-out) infinite;
+}
+@keyframes skeleton-sheen {
+  from {
+    background-position: -100% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+/* Newly inserted content settles in from slightly below. */
+.reveal {
+  animation: reveal var(--duration-base) var(--ease-out) both;
+}
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(var(--shift));
+  }
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A hairline track; determinate fills scale, indeterminate ones sweep. */
+.progress-track {
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: var(--border);
+}
+.progress-track > span {
+  position: absolute;
+  inset: 0;
+  background: var(--text);
+  transform-origin: left;
+  transform: scaleX(var(--progress, 0));
+  transition: transform var(--duration-slow) var(--ease-out);
+}
+.progress-track.indeterminate > span {
+  transform: none;
+  width: 35%;
+  animation: progress-sweep 1.1s var(--ease-in-out) infinite;
+}
+@keyframes progress-sweep {
+  from {
+    translate: -100% 0;
+  }
+  to {
+    translate: 290% 0;
+  }
+}
+
+/* A selection surface that slides between the active children of its host. */
+.indicator-host {
+  position: relative;
+  isolation: isolate;
+}
+.indicator-host[data-indicator]::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  top: 0;
+  width: var(--indicator-w);
+  height: var(--indicator-h);
+  transform: translate(var(--indicator-x), var(--indicator-y));
+  border-radius: var(--indicator-radius, 7px);
+  background: var(--selected);
+  pointer-events: none;
+}
+.indicator-host[data-indicator="live"]::before {
+  transition:
+    transform var(--duration-slow) var(--ease-out),
+    width var(--duration-slow) var(--ease-out),
+    height var(--duration-slow) var(--ease-out);
+}
+
+/* Route changes cross-fade; named elements morph between their positions. */
+::view-transition-old(root) {
+  animation: view-out var(--duration-fast) ease both;
+}
+::view-transition-new(root) {
+  animation: view-in var(--duration-base) var(--ease-out) both;
+}
+::view-transition-group(*) {
+  animation-duration: var(--duration-slow);
+  animation-timing-function: var(--ease-out);
+}
+::view-transition-old(*),
+::view-transition-new(*) {
+  height: 100%;
+  width: auto;
+  object-fit: none;
+  object-position: left top;
+}
+@keyframes view-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes view-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+  }
+  *,
+  ::before,
+  ::after {
+    transition-property:
+      color, background-color, border-color, opacity !important;
+  }
+  button:active:not(:disabled) {
+    transform: none;
+  }
+  .skeleton,
+  .spin,
+  .progress-track.indeterminate > span {
+    animation: none;
+  }
+  .progress-track.indeterminate > span {
+    width: 100%;
+    opacity: 0.4;
+  }
+}

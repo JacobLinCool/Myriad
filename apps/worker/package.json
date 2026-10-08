@@ -1,0 +1,25 @@
+{
+  "name": "@myriad/worker",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@myriad/shared": "workspace:*",
+    "hono": "^4.7.4",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250224.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.7",
+    "wrangler": "^3.111.0",
+    "miniflare": "3.20250718.3",
+    "esbuild": "^0.25.0"
+  }
+}

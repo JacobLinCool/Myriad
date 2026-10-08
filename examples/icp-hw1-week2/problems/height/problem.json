@@ -1,0 +1,61 @@
+{
+  "title": "身高換算",
+  "order": 0,
+  "sampleCases": [
+    {
+      "input": "2\n5 7\n6 0\n",
+      "output": "Height in centimeters = 170.2 cm\nHeight in centimeters = 182.9 cm\n"
+    }
+  ],
+  "normalize": "trim",
+  "limits": {
+    "instructionBudget": 50000000,
+    "logicalTimeLimitMs": 2000,
+    "memoryMb": 64,
+    "outputLimitBytes": 262144
+  },
+  "groups": [
+    {
+      "name": "子任務 1：常見身高",
+      "tests": [
+        "01.in",
+        "02.in",
+        "03.in",
+        "04.in",
+        "05.in"
+      ]
+    },
+    {
+      "name": "子任務 2：英尺或英吋為 0",
+      "tests": [
+        "06.in",
+        "07.in",
+        "08.in",
+        "09.in",
+        "10.in"
+      ]
+    },
+    {
+      "name": "子任務 3：英吋可能超過 11",
+      "tests": [
+        "11.in",
+        "12.in",
+        "13.in",
+        "14.in",
+        "15.in",
+        "16.in"
+      ]
+    },
+    {
+      "name": "子任務 4：較大數值",
+      "tests": [
+        "17.in",
+        "18.in",
+        "19.in",
+        "20.in",
+        "21.in",
+        "22.in"
+      ]
+    }
+  ]
+}
