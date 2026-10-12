@@ -35,7 +35,7 @@
     ><PanelLeft size={18} /></button
   ><span
     >{session.parts[0] === "teacher"
-      ? "教師工作台"
+      ? "管理工作台"
       : (session.exam?.title ??
         session.listed?.title ??
         (session.eid ? "" : "所有考試"))}</span

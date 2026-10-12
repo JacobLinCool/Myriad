@@ -5,7 +5,7 @@
     House,
     Code2,
     History,
-    GraduationCap,
+    LayoutDashboard,
     UserRound,
     ArrowLeft,
     CheckCircle2,
@@ -70,9 +70,9 @@
   <div class="rail-spacer"></div>
   <IconButton
     active={session.parts[0] === "teacher"}
-    label="教師工作台"
+    label="管理工作台"
     onclick={() => session.navigate("/teacher")}
-    ><GraduationCap size={21} /></IconButton
+    ><LayoutDashboard size={21} /></IconButton
   >
   <IconButton
     class="avatar"
@@ -153,7 +153,7 @@
       class="nav-row"
       class:active={session.parts[0] === "teacher"}
       onclick={() => session.navigate("/teacher")}
-      ><GraduationCap size={16} /> 教師工作台</button
+      ><LayoutDashboard size={16} /> 管理工作台</button
     >
   {/if}
 </aside>

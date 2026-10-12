@@ -49,8 +49,8 @@
       >
         <Eye size={15} /><span
           >{session.previewing
-            ? "教師預覽：不受考試時間限制，提交會正常判題，但不列入學生紀錄、統計與匯出。"
-            : "教師預覽需要在同一瀏覽器登入此考試的教師工作台。"}</span
+            ? "管理者預覽：不受考試時間限制，提交會正常判題，但不列入學生紀錄、統計與匯出。"
+            : "管理者預覽需要在同一瀏覽器登入此考試的管理工作台。"}</span
         ><button onclick={session.exitPreview}>結束預覽</button>
       </div>{/if}
     {#if session.error}<div class="error-banner reveal" role="alert">
@@ -63,7 +63,7 @@
       {#if teacher.current}<teacher.current.default
           path={session.path}
           navigate={session.navigate}
-        />{:else}<LoadingView kind="page" label="正在載入教師工作台…" />{/if}
+        />{:else}<LoadingView kind="page" label="正在載入管理工作台…" />{/if}
     {:else if session.eid && (session.loading || (!session.exam && !session.error))}<LoadingView
         kind={session.section === "problems" ? "workspace" : "page"}
         listed={session.listed}

@@ -185,7 +185,7 @@
         loading={data.loading}
       />{/if}
   </header>
-  <p class="muted">通過狀態與資源數值為暫定結果；正式成績以教師複驗為準。</p>
+  <p class="muted">通過狀態與資源數值為暫定結果；正式成績以管理者複驗為準。</p>
   {#if data.error}<p class="error" role="alert">{data.error}</p>{/if}
   <div class="controls">
     <Select

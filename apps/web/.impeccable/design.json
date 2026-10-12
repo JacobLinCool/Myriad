@@ -309,7 +309,7 @@
       "name": "Saved verdict",
       "kind": "custom",
       "description": "Saved submission clearly distinguished from official grades.",
-      "html": "<div class=\"ds-verdict\"><strong>已保存 · 100%</strong><small>即時判定，正式成績待教師本機複判。</small></div>",
+      "html": "<div class=\"ds-verdict\"><strong>已保存 · 100%</strong><small>即時判定，正式成績待管理者本機複判。</small></div>",
       "css": ".ds-verdict{font:14px system-ui;color:#e5e5e3;margin:22px 0;display:flex;gap:9px;align-items:center;flex-wrap:wrap}.ds-verdict small{width:100%;font-size:12px;line-height:1.6;color:var(--muted)}"
     }
   ],

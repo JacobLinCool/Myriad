@@ -58,7 +58,8 @@
 {:else if session.access?.canCreateExams}<div class="empty">
     <h2>從本機發布第一場考試</h2>
     <p>
-      使用 agent 或 CLI 完成建置、測試與發布。所有程式驗證都在教師裝置上執行。
+      使用 agent 或 CLI
+      完成建置、測試與發布。所有程式驗證都在管理者的裝置上執行。
     </p>
     <pre>myriad init my-exam
 myriad build my-exam --json
@@ -66,7 +67,7 @@ myriad test my-exam aplusb my-exam/problems/aplusb/solution.c --json
 myriad deploy my-exam --remote https://your-host --json</pre>
   </div>
 {:else}<p class="muted">
-    尚無可管理的考試。請由管理員授予建立考試許可，或由考試擁有者邀請你共同管理。
+    尚無可管理的考試。請由平台管理員授予建立考試許可，或由考試擁有者邀請你共同管理。
   </p>{/if}
 
 <style>

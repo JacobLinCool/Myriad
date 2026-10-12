@@ -19,7 +19,7 @@
     <dt>權限</dt>
     <dd>
       {session.access?.isAdmin
-        ? "管理員"
+        ? "平台管理員"
         : session.access?.canCreateExams
           ? "可建立考試／作業"
           : "可管理受邀的考試／作業"}

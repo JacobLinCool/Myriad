@@ -23,7 +23,7 @@
             : null) ??
           session.exams.find((e) => e.id === route.examId)?.title ??
           "考試")
-        : "教師工作台",
+        : "管理工作台",
   );
   let loginError = $state("");
   onMount(() => {
@@ -47,7 +47,7 @@
       {#if route.view !== "exams"}<a
           class="crumb"
           href="/teacher"
-          onclick={(e) => follow(e, "/teacher", navigate)}>教師工作台</a
+          onclick={(e) => follow(e, "/teacher", navigate)}>管理工作台</a
         >{/if}
       <h1>{title}</h1>
     </div>
@@ -89,12 +89,12 @@
         bind:value={session.credential}
         required
       />
-      <p>請輸入管理員核發的個人 API 憑證。</p>
+      <p>請輸入平台管理員核發的個人 API 憑證。</p>
       <button class="primary" disabled={session.busy || !session.credential}
         >{#if session.authenticating}<LoaderCircle
             size={15}
             class="spin"
-          />{/if}登入教師工作台</button
+          />{/if}登入管理工作台</button
       >
     </form>
   {:else if route.view === "account"}

@@ -72,7 +72,7 @@
       <Updated at={overview.data.updatedAt} loading={overview.loading} />
     </header>
     <p class="muted">
-      以目前題目版本計算；通過狀態為暫定結果，正式成績以教師複驗為準。
+      以目前題目版本計算；通過狀態為暫定結果，正式成績以管理者複驗為準。
     </p>
     <div class="table-scroll">
       <table>

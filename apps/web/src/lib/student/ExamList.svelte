@@ -69,7 +69,7 @@
           ></button
         >{:else}<div class="empty">
           <h2>等待考試發布</h2>
-          <p>教師發布後，考試會出現在這裡。</p>
+          <p>管理者發布後，考試會出現在這裡。</p>
         </div>{/each}
     {/if}
   </div>
