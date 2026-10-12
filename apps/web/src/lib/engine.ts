@@ -1,5 +1,6 @@
 import { measure, type Recorder } from "./telemetry";
 import { updateStatus } from "./engine-status";
+import { reportError, track } from "./posthog";
 export { onEngineStatus, type EngineStatus } from "./engine-status";
 import { createBrowserEngine, type Engine } from "@wasm-oj/browser";
 import { browserSource as clangSource } from "@wasm-oj/toolchain-clang";
@@ -23,6 +24,7 @@ export async function getEngine(record: Recorder): Promise<Engine> {
   updateStatus({ state: "downloading", message: "Loading compiler..." });
 
   engineInitPromise = (async () => {
+    const start = performance.now();
     try {
       const toolchainBase = "/toolchains/";
       const engine = await measure(record, "engine_init", () =>
@@ -34,6 +36,7 @@ export async function getEngine(record: Recorder): Promise<Engine> {
 
       engineInstance = engine;
       updateStatus({ state: "ready", message: "Ready" });
+      track("engine_ready", { duration_ms: performance.now() - start });
       return engine;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -42,6 +45,7 @@ export async function getEngine(record: Recorder): Promise<Engine> {
         message: `Failed to load compiler: ${msg}`,
       });
       engineInitPromise = null;
+      reportError(err, { action: "engine_init" });
       throw err;
     }
   })();

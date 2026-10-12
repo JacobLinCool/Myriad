@@ -17,7 +17,7 @@
   <header class="page-heading">
     <div>
       <h1>提交紀錄</h1>
-      <p>
+      <p class="ph-no-capture">
         {session.student || "請先選擇身分"} · 查看每次提交的時間與判定。
       </p>
     </div>

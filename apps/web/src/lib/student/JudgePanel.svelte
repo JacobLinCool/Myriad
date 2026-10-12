@@ -93,7 +93,7 @@
           </div>{/if}
         {#if session.diagnostics}<div class="reveal">
             <h3>編譯訊息</h3>
-            <pre class="error">{session.diagnostics}</pre>
+            <pre class="error ph-no-capture">{session.diagnostics}</pre>
           </div>{/if}
         {#key session.panel}<div class="panel-view">
             {#if session.panel === "run"}<label for="stdin">自訂輸入</label
@@ -111,7 +111,9 @@
                   <div class="progress-track indeterminate"><span></span></div>
                   <p class="muted">正在編譯並執行…</p>
                 </div>{:else if session.output}<pre
-                  class="reveal">{session.output}</pre>{:else}<p class="muted">
+                  class="reveal ph-no-capture">{session.output}</pre>{:else}<p
+                  class="muted"
+                >
                   執行程式後，輸出與耗時會顯示在這裡。
                 </p>{/if}
             {:else if session.panel === "judge"}<h3 aria-live="polite">

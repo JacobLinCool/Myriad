@@ -49,7 +49,9 @@
       <h2>確認作答身分</h2>
       <p>選擇 NYCU 登入或訪客作答，確認身分後開始。</p>
       <div class="toolbar">
-        <strong>{session.student || "尚未選擇身分"}</strong><button
+        <strong class="ph-no-capture"
+          >{session.student || "尚未選擇身分"}</strong
+        ><button
           onclick={() => {
             session.studentInput = session.student;
             session.showIdentity = true;

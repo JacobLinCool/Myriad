@@ -121,6 +121,7 @@
     </div>
     <div class="sidebar-bottom">
       <span>目前身分</span><button
+        class="ph-no-capture"
         onclick={() => {
           session.studentInput = session.student;
           session.showIdentity = true;

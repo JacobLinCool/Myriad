@@ -10,7 +10,9 @@
   ],
   "vars": {
     "APP_ORIGIN": "https://judge.nycu.ai",
-    "NYCU_CLIENT_ID": "tiTEbRlHeXFV17uUH8C3fad5H7nCjHhNKwJuQ8MW"
+    "NYCU_CLIENT_ID": "tiTEbRlHeXFV17uUH8C3fad5H7nCjHhNKwJuQ8MW",
+    "POSTHOG_KEY": "phc_vNQg5UDFCYwoULyZbJV2VmKN32evEAkxEgkAZW6PSTis",
+    "POSTHOG_HOST": "https://us.i.posthog.com"
   },
   "main": "src/index.ts",
   "compatibility_date": "2024-10-01",

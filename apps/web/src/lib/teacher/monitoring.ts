@@ -5,7 +5,9 @@ export const metrics: { value: Metric; label: string }[] = [
   { value: "memoryBytes", label: "Memory（尖峰 bytes）" },
   { value: "codeBytes", label: "程式碼（UTF-8 bytes）" },
 ];
-export function statusLabel(s: MonitoredSubmission) {
+export function statusLabel(
+  s: Pick<MonitoredSubmission, "status" | "testsReported" | "passed" | "score">,
+) {
   if (s.status === "running") return `執行中 · ${s.testsReported} 筆測資`;
   if (s.status === "expired") return "已逾時";
   if (s.status === "failed") return "已中止";

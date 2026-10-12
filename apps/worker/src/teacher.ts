@@ -1,4 +1,5 @@
-import { requireCreator } from "./permissions.js";
+import { account, requireCreator } from "./permissions.js";
+import { analyticsId, background, capture } from "./analytics.js";
 import { Hono } from "hono";
 import { setCookie, deleteCookie } from "hono/cookie";
 import { z } from "zod";
@@ -19,10 +20,28 @@ import {
   page,
   inputKey,
   revisionManifest,
+  type AppContext,
   type Env,
   type ExamRow,
 } from "./core.js";
 import { summary, purgePreview, type AttemptRow } from "./attempts.js";
+import { analysis } from "./monitor.js";
+/** Records a teacher action made from the CLI or the workspace. */
+async function teacherEvent(
+  c: AppContext,
+  event: string,
+  properties: Record<string, unknown>,
+) {
+  if (!c.env.POSTHOG_KEY) return;
+  const identity = await account(c);
+  if (!identity) return;
+  capture(c.env, background(c), event, {
+    distinct_id: await analyticsId(c.env, identity.provider, identity.subject),
+    app_area: "teacher",
+    client: c.req.header("Authorization") ? "cli" : "web",
+    ...properties,
+  });
+}
 export const teachers = new Hono<{ Bindings: Env }>();
 teachers.post("/api/teacher/session", async (c) => {
   const tid = await teacher(c),
@@ -126,6 +145,12 @@ teachers.post("/api/teacher/exams/:eid/revisions", async (c) => {
       .bind(e.id, bundle.revision, key, JSON.stringify(stored), Date.now())
       .run();
   }
+  await teacherEvent(c, "exam_revision_uploaded", {
+    exam_id: e.id,
+    created_exam: !prior,
+    new_revision: !existing,
+    problem_count: content.problems.length,
+  });
   return c.json({
     examId: e.id,
     revision: bundle.revision,
@@ -200,6 +225,14 @@ teachers.post(
       .first();
     if (!published)
       fail("Exam changed; review the current revision before publishing", 409);
+    await teacherEvent(c, "exam_published", {
+      exam_id: e.id,
+      first_publish: !previous,
+      problem_count: m.problems.length,
+      has_semantic_check: m.problems.some(
+        (p: { semanticCheck?: string }) => p.semanticCheck,
+      ),
+    });
     return c.json({
       examId: e.id,
       revision: c.req.param("revision"),
@@ -369,64 +402,9 @@ teachers.get("/api/teacher/exams/:eid/submissions/:aid", async (c) => {
       : undefined,
   });
 });
-teachers.get("/api/teacher/exams/:eid/analysis", async (c) => {
-  const e = await exam(c, true);
-  await purgePreview(c.env.DB, e);
-  const totals = await c.env.DB.prepare(
-    "SELECT COUNT(*) AS attempts,COUNT(DISTINCT participant_id) AS students,SUM(status='complete') AS completed FROM attempts WHERE exam_id=? AND preview=0",
-  )
-    .bind(e.id)
-    .first();
-  const devices = await c.env.DB.prepare(
-    `SELECT device_id AS deviceId,student_id AS studentId,identity_kind AS identityKind,COUNT(*) AS submissions,MIN(created_at) AS firstSeenAt,MAX(created_at) AS lastSeenAt FROM attempts WHERE exam_id=? AND preview=0 AND device_id IN (SELECT device_id FROM attempts WHERE exam_id=? AND preview=0 GROUP BY device_id HAVING COUNT(DISTINCT participant_id)>1) GROUP BY device_id,participant_id ORDER BY device_id,student_id`,
-  )
-    .bind(e.id, e.id)
-    .all();
-  const timings = await c.env.DB.prepare(
-    `SELECT kind,COUNT(*) AS samples,AVG(json_extract(event,'$.durationMs')) AS averageMs,MAX(json_extract(event,'$.durationMs')) AS maxMs,SUM(json_extract(event,'$.outcome')='error') AS errors FROM browser_telemetry WHERE exam_id=? GROUP BY kind`,
-  )
-    .bind(e.id)
-    .all();
-  // One grouped query: do not download source or issue a query per attempt.
-  const submissions = await c.env.DB.prepare(
-    `
-    SELECT a.id,a.sequence,a.participant_id AS participantId,a.student_id AS studentId,
-      a.identity_kind AS identityKind,a.problem_id AS problemId,a.problem_version AS problemVersion,
-      CASE WHEN a.status='running' AND a.expires_at<=? THEN 'expired' ELSE a.status END AS status,
-      a.created_at AS createdAt,COALESCE(json_extract(a.result,'$.score'),0) AS score,
-      (a.status='complete' AND COALESCE(json_extract(a.result,'$.semanticCheck.passed'),1)=1 AND COUNT(c.idx)>0 AND SUM(json_extract(c.verdict,'$.status')='AC')=COUNT(c.idx)) AS passed,
-      COUNT(c.idx) AS testsReported,length(CAST(a.code AS BLOB)) AS codeBytes,
-      CASE WHEN COUNT(json_extract(c.claim,'$.metrics.instructionCost'))=COUNT(c.idx)
-        THEN SUM(json_extract(c.claim,'$.metrics.instructionCost')) END AS instructionCost,
-      CASE WHEN COUNT(json_extract(c.claim,'$.metrics.memoryBytes'))=COUNT(c.idx)
-        THEN MAX(json_extract(c.claim,'$.metrics.memoryBytes')) END AS memoryBytes,
-      CASE WHEN COUNT(DISTINCT json_extract(c.claim,'$.metrics.costProfile'))=1
-        AND COUNT(json_extract(c.claim,'$.metrics.costProfile'))=COUNT(c.idx)
-        THEN MIN(json_extract(c.claim,'$.metrics.costProfile')) END AS costProfile,
-      CASE WHEN COUNT(DISTINCT json_extract(c.claim,'$.metrics.costModel'))=1
-        AND COUNT(json_extract(c.claim,'$.metrics.costModel'))=COUNT(c.idx)
-        THEN MIN(json_extract(c.claim,'$.metrics.costModel')) END AS costModel
-    FROM attempts a LEFT JOIN attempt_claims c ON c.attempt_id=a.id
-    WHERE a.exam_id=? AND a.preview=0 GROUP BY a.id ORDER BY a.sequence
-  `,
-  )
-    .bind(Date.now(), e.id)
-    .all<
-      Omit<import("@myriad/shared").MonitoredSubmission, "passed"> & {
-        passed: number;
-      }
-    >();
-  return c.json({
-    totals,
-    devices: devices.results,
-    timings: timings.results,
-    updatedAt: Date.now(),
-    submissions: submissions.results.map((s) => ({
-      ...s,
-      passed: s.passed === 1,
-    })),
-  });
-});
+teachers.get("/api/teacher/exams/:eid/analysis", async (c) =>
+  c.json(await analysis(c)),
+);
 teachers.get("/api/teacher/exams/:eid/telemetry", async (c) => {
   const e = await exam(c, true),
     { after, limit } = page(c);
@@ -556,6 +534,12 @@ teachers.post("/api/teacher/exams/:eid/results", async (c) => {
       Date.now(),
     )
     .run();
+  await teacherEvent(c, "exam_results_verified", {
+    exam_id: e.id,
+    participant_count: scores.length,
+    dispute_count: verified.filter((v) => v.classification === "DISPUTED")
+      .length,
+  });
   return c.json({
     revision,
     scores,

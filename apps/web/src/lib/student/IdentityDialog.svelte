@@ -22,7 +22,9 @@
 </script>
 
 <Dialog title="作答身分" bind:open={session.showIdentity}>
-  {#if session.identityKind === "nycu"}<p>NYCU · {session.student}</p>{/if}
+  {#if session.identityKind === "nycu"}<p class="ph-no-capture">
+      NYCU · {session.student}
+    </p>{/if}
   {#if session.error}<p class="error" role="alert">{session.error}</p>{/if}
   {#if session.nycuEnabled}<button
       class="oauth"

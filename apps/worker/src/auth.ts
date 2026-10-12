@@ -1,4 +1,5 @@
 import { ensureAccount } from "./permissions.js";
+import { analyticsId, background, capture } from "./analytics.js";
 import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { sha256Hex } from "@myriad/shared";
@@ -76,6 +77,7 @@ auth.get("/api/auth/session", async (c) => {
     nycuEnabled: configured(c),
     account: account
       ? {
+          analyticsId: await analyticsId(c.env, "nycu", account.username),
           kind: "nycu",
           label: account.username,
           key: participantId("nycu", account.username),
@@ -234,6 +236,11 @@ auth.get("/api/auth/nycu/callback", async (c) => {
       );
     await c.env.DB.batch(statements);
     setCookie(c, SESSION, session, { ...cookieOptions(c), maxAge: 86400 });
+    capture(c.env, background(c), "login_succeeded", {
+      distinct_id: await analyticsId(c.env, "nycu", profile.username),
+      provider: "nycu",
+      app_area: pending.return_to === "/teacher" ? "teacher" : "student",
+    });
     return c.redirect(`${base}${pending.return_to}`);
   } catch {
     return failed("provider");

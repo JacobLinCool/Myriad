@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { analyticsId } from "./analytics.js";
 import { sha256Hex } from "@myriad/shared";
 import {
   account,
@@ -12,7 +13,14 @@ export const management = new Hono<{ Bindings: Env }>();
 management.get("/api/teacher/access", async (c) => {
   const identity = await account(c);
   return c.json({
-    account: identity,
+    account: identity && {
+      ...identity,
+      analyticsId: await analyticsId(
+        c.env,
+        identity.provider,
+        identity.subject,
+      ),
+    },
     canCreateExams: identity ? await canCreate(c, identity.id) : false,
     isAdmin: isAdministrator(c, identity),
     nycuEnabled: !!(

@@ -2,6 +2,8 @@ import { api } from "../api";
 export interface ManagementAccess {
   account: {
     id: string;
+    /** Pseudonymous ID for analytics. */
+    analyticsId: string;
     provider: string;
     subject: string;
     name: string;
@@ -44,16 +46,82 @@ export type ExamSettings = Pick<
   ExamDetail,
   "title" | "startsAt" | "endsAt" | "rules" | "policy"
 >;
-export interface Analysis {
+/** Counts for the overview tab; passed participants use each attempt's stored result. */
+export interface Overview {
   updatedAt: number;
+  totals: {
+    attempts: number;
+    students: number;
+    completed: number;
+    running: number;
+  };
+  problems: {
+    problemId: string;
+    problemVersion: string | null;
+    submissions: number;
+    participants: number;
+    passedParticipants: number;
+    running: number;
+    stopped: number;
+  }[];
+}
+export interface StudentCell {
+  attempts: number;
+  latest: Pick<
+    import("@myriad/shared").MonitoredSubmission,
+    "id" | "status" | "score" | "passed" | "testsReported"
+  >;
+  /** The attempt the exam's policy counts, once one is complete. */
+  selected: { score: number; passed: boolean } | null;
+}
+/** One page of the student × problem matrix, current problem versions only. */
+export interface StudentPage {
+  updatedAt: number;
+  total: number;
+  offset: number;
+  pageSize: number;
+  students: {
+    participantId: string;
+    studentId: string;
+    identityKind: "guest" | "nycu";
+    cells: Record<string, StudentCell>;
+  }[];
+}
+export interface ProblemSubmissions {
+  updatedAt: number;
+  version: string | null;
+  currentVersion: string | null;
+  versions: { version: string | null; submissions: number }[];
   submissions: import("@myriad/shared").MonitoredSubmission[];
-  totals: { attempts: number; students: number; completed: number };
+}
+export interface DeviceLinks {
+  updatedAt: number;
   devices: {
     deviceId: string;
     studentId: string;
     identityKind: "guest" | "nycu";
     submissions: number;
+    firstSeenAt: number;
+    lastSeenAt: number;
+    /** Comma-separated client IPs the server saw; null for older submissions. */
+    ips: string | null;
   }[];
+  /** Identities that submitted from more than one device, one row per device. */
+  identities: {
+    studentId: string;
+    identityKind: "guest" | "nycu";
+    deviceId: string;
+    submissions: number;
+    firstSeenAt: number;
+    lastSeenAt: number;
+    ips: string | null;
+    /** Distinct user agents on this device; `userAgent` is one of them. */
+    userAgents: number;
+    userAgent: string | null;
+  }[];
+}
+export interface Performance {
+  updatedAt: number;
   timings: {
     kind: string;
     samples: number;

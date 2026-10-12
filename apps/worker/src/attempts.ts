@@ -1,4 +1,5 @@
-import { ensureSemantic } from "./semantic.js";
+import { ensureSemantic, type SemanticTrace } from "./semantic.js";
+import { background, capture, participantDistinct } from "./analytics.js";
 import { Hono } from "hono";
 import {
   AttemptRequestSchema,
@@ -139,6 +140,7 @@ async function finalizeAttempt(
   env: Env,
   a: AttemptRow,
   p: GradingProblem,
+  waitUntil: (work: Promise<unknown>) => void,
 ): Promise<AttemptRow> {
   if (a.status !== "running") return a;
   const saved = await summary(env.DB, a);
@@ -177,6 +179,30 @@ async function finalizeAttempt(
       p.testCount,
     )
     .first<AttemptRow>();
+  if (updated) {
+    const completedAt = Date.now();
+    waitUntil(
+      participantDistinct(env, a.identity_kind, a.student_id).then(
+        (participant) =>
+          capture(env, waitUntil, "submission_graded", {
+            ...participant,
+            exam_id: a.exam_id,
+            problem_id: a.problem_id,
+            attempt_id: a.id,
+            is_preview: a.preview === 1,
+            score: result.score,
+            groups_passed: tests.groupsPassed,
+            groups_total: tests.groupsTotal,
+            all_groups_passed: tests.groupsPassed === tests.groupsTotal,
+            tests_passed: saved.verdicts.filter((v) => v.status === "AC")
+              .length,
+            tests_total: p.testCount,
+            semantic_check_passed: semanticCheck?.passed ?? null,
+            grading_ms: completedAt - a.created_at,
+          }),
+      ),
+    );
+  }
   return (
     updated ??
     (await env.DB.prepare("SELECT * FROM attempts WHERE id=?")
@@ -184,12 +210,31 @@ async function finalizeAttempt(
       .first<AttemptRow>())!
   );
 }
+async function semanticTrace(
+  c: AppContext,
+  a: AttemptRow,
+): Promise<SemanticTrace> {
+  return {
+    waitUntil: background(c),
+    attemptId: a.id,
+    examId: a.exam_id,
+    problemId: a.problem_id,
+    preview: a.preview === 1,
+    participant: await participantDistinct(
+      c.env,
+      a.identity_kind,
+      a.student_id,
+    ),
+  };
+}
 function startSemantic(c: AppContext, a: AttemptRow, p: GradingProblem) {
   if (!p.semanticCheck || a.status !== "running") return;
+  const instruction = p.semanticCheck;
   c.executionCtx.waitUntil(
-    ensureSemantic(c.env, a.id, p.semanticCheck, a.code)
+    semanticTrace(c, a)
+      .then((trace) => ensureSemantic(c.env, a.id, instruction, a.code, trace))
       .then(async (result) => {
-        if (result) await finalizeAttempt(c.env, a, p);
+        if (result) await finalizeAttempt(c.env, a, p, background(c));
       })
       .catch(() => {
         console.error("Background submission grading unavailable", a.id);
@@ -250,8 +295,8 @@ attempts.post("/api/exams/:eid/attempts", async (c) => {
       `INSERT INTO submission_cooldowns VALUES (?,?,?,?) ON CONFLICT(exam_id,participant_id) DO UPDATE SET operation_id=excluded.operation_id,reserved_at=excluded.reserved_at WHERE submission_cooldowns.reserved_at<=excluded.reserved_at-5000`,
     ).bind(e.id, participant, req.operationId, now),
     c.env.DB.prepare(
-      `INSERT INTO attempts (id,exam_id,revision,problem_id,student_id,device_id,code,code_sha256,request_hash,token_hash,status,created_at,expires_at,identity_kind,participant_id,preview,problem_version)
-      SELECT ?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM submission_cooldowns WHERE exam_id=? AND participant_id=? AND operation_id=?) ON CONFLICT(id) DO NOTHING RETURNING *`,
+      `INSERT INTO attempts (id,exam_id,revision,problem_id,student_id,device_id,code,code_sha256,request_hash,token_hash,status,created_at,expires_at,identity_kind,participant_id,preview,problem_version,client_ip,user_agent)
+      SELECT ?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM submission_cooldowns WHERE exam_id=? AND participant_id=? AND operation_id=?) ON CONFLICT(id) DO NOTHING RETURNING *`,
     ).bind(
       req.operationId,
       e.id,
@@ -269,6 +314,8 @@ attempts.post("/api/exams/:eid/attempts", async (c) => {
       participant,
       preview ? 1 : 0,
       problem.version,
+      c.req.header("CF-Connecting-IP") ?? null,
+      c.req.header("User-Agent")?.slice(0, 512) ?? null,
       e.id,
       participant,
       req.operationId,
@@ -360,7 +407,7 @@ attempts.get("/api/exams/:eid/attempts/:aid/ws", async (c) => {
   let observingSemantic = false;
   async function complete() {
     if (a.status !== "running" || claims.size !== p.testCount) return;
-    a = await finalizeAttempt(c.env, a, p);
+    a = await finalizeAttempt(c.env, a, p, background(c));
     if (a.status === "running" && p.semanticCheck) {
       if (semanticError) throw semanticError;
       send({ type: "semantic", status: "running" });
@@ -376,12 +423,14 @@ attempts.get("/api/exams/:eid/attempts/:aid/ws", async (c) => {
       (async () => {
         try {
           const deadline = Date.now() + 35000;
+          const trace = await semanticTrace(c, a);
           while (server.readyState === WebSocket.OPEN) {
             const result = await ensureSemantic(
               c.env,
               a.id,
               instruction,
               a.code,
+              trace,
             );
             if (result) {
               await enqueue(async () => {

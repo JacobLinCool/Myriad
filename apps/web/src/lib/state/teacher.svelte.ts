@@ -1,16 +1,24 @@
 import { api, ApiError } from "../api";
+import { identify, reportError, resetIdentity, track } from "../posthog";
 import { LatestRequest, errorMessage } from "./requests";
 import {
   collectExport,
   downloadJSON,
   type TeacherExam,
   type ManagementAccess,
-  type Analysis,
-  type Reports,
   type ExamDetail,
   type ExamSettings,
   type ExportKind,
 } from "../teacher/data";
+function identifyTeacher(access: ManagementAccess) {
+  if (!access.account) return;
+  identify(access.account.analyticsId, {
+    provider: access.account.provider,
+    is_teacher: true,
+    can_create_exams: access.canCreateExams,
+    is_admin: access.isAdmin,
+  });
+}
 export function createTeacherSession(
   request: typeof api = api,
   download = downloadJSON,
@@ -22,10 +30,10 @@ export function createTeacherSession(
     error = $state("");
   let exams = $state<TeacherExam[]>([]),
     selected = $state("");
-  let analysis = $state<Analysis | null>(null),
-    reports = $state<Reports | null>(null),
-    detail = $state<ExamDetail | null>(null),
-    saving = $state(false);
+  let detail = $state<ExamDetail | null>(null),
+    saving = $state(false),
+    /** Tabs reload their own data whenever this changes. */
+    refreshKey = $state(0);
   let authenticating = $state(false),
     loading = $state(false),
     exporting = $state(false);
@@ -49,6 +57,7 @@ export function createTeacherSession(
         loggedIn = false;
         return;
       }
+      identifyTeacher(permissions);
       const rows = await request<TeacherExam[]>(
         "/api/teacher/exams",
         "GET",
@@ -62,7 +71,10 @@ export function createTeacherSession(
     } catch (e) {
       if (operation.current()) {
         if (e instanceof ApiError && e.status === 401) loggedIn = false;
-        else error = errorMessage(e);
+        else {
+          error = errorMessage(e);
+          reportError(e, { action: "teacher_load" });
+        }
       }
     } finally {
       if (operation.current()) {
@@ -92,6 +104,9 @@ export function createTeacherSession(
       );
       if (!operation.current()) return;
       access = permissions;
+      if (!permissions.account) throw new Error("登入帳戶無效");
+      identifyTeacher(permissions);
+      track("login_succeeded", { provider: "token", app_area: "teacher" });
       const rows = await request<TeacherExam[]>(
         "/api/teacher/exams",
         "GET",
@@ -103,7 +118,14 @@ export function createTeacherSession(
         loggedIn = true;
       }
     } catch (e) {
-      if (operation.current()) error = errorMessage(e);
+      if (operation.current()) {
+        error = errorMessage(e);
+        track("login_failed", {
+          provider: "token",
+          app_area: "teacher",
+          status: e instanceof ApiError ? e.status : null,
+        });
+      }
     } finally {
       if (operation.current()) {
         authenticating = false;
@@ -111,34 +133,47 @@ export function createTeacherSession(
       }
     }
   }
-  async function select(id: string) {
+  /**
+   * Opens an exam's header data; each tab loads only what it shows. Reopening
+   * the shown exam keeps its data visible until the new data arrives.
+   */
+  async function open(id: string) {
     const operation = selection.begin();
-    // Refreshing the shown exam keeps its data visible until the new data arrives.
     if (id !== selected) {
-      analysis = null;
-      reports = null;
+      track("teacher_exam_selected", { exam_id: id });
       detail = null;
     }
     selected = id;
     loading = true;
     error = "";
     try {
-      const path = `/api/teacher/exams/${encodeURIComponent(id)}`;
-      const [a, r, d] = await Promise.all([
-        request<Analysis>(`${path}/analysis`, "GET", undefined, operation),
-        request<Reports>(`${path}/results`, "GET", undefined, operation),
-        request<ExamDetail>(path, "GET", undefined, operation),
-      ]);
-      if (operation.current()) {
-        analysis = a;
-        reports = r;
-        detail = d;
-      }
+      const d = await request<ExamDetail>(
+        `/api/teacher/exams/${encodeURIComponent(id)}`,
+        "GET",
+        undefined,
+        operation,
+      );
+      if (operation.current()) detail = d;
     } catch (e) {
-      if (operation.current()) error = errorMessage(e);
+      if (operation.current()) {
+        error = errorMessage(e);
+        reportError(e, { action: "teacher_open_exam", exam_id: id });
+      }
     } finally {
       if (operation.current()) loading = false;
     }
+  }
+  /** Reloads the exam header and the open tab. */
+  function refresh() {
+    if (!selected) return;
+    refreshKey++;
+    return open(selected);
+  }
+  function close() {
+    selection.cancel();
+    selected = "";
+    detail = null;
+    loading = false;
   }
   /** Saves exam settings; they apply to students immediately. */
   async function saveSettings(settings: Partial<ExamSettings>) {
@@ -164,9 +199,14 @@ export function createTeacherSession(
             }
           : e,
       );
+      track("teacher_exam_settings_saved", {
+        exam_id: examId,
+        changed_fields: Object.keys(settings),
+      });
       return true;
     } catch (e) {
       if (selected === examId) error = errorMessage(e);
+      reportError(e, { action: "teacher_save_settings", exam_id: examId });
       return false;
     } finally {
       saving = false;
@@ -183,18 +223,21 @@ export function createTeacherSession(
     try {
       await request("/api/teacher/session", "DELETE", undefined, operation);
       if (operation.current()) {
+        track("logout", { app_area: "teacher" });
+        resetIdentity();
         loggedIn = false;
         access = access
           ? { ...access, account: null, isAdmin: false, canCreateExams: false }
           : null;
         selected = "";
-        analysis = null;
-        reports = null;
         detail = null;
         exams = [];
       }
     } catch (e) {
-      if (operation.current()) error = errorMessage(e);
+      if (operation.current()) {
+        error = errorMessage(e);
+        reportError(e, { action: "teacher_logout" });
+      }
     } finally {
       if (operation.current()) authenticating = false;
     }
@@ -212,9 +255,19 @@ export function createTeacherSession(
         operation.signal,
         request,
       );
-      if (operation.current()) download(result.filename, result.items);
+      if (operation.current()) {
+        download(result.filename, result.items);
+        track("teacher_data_exported", {
+          exam_id: examId,
+          export_kind: kind,
+          item_count: result.items.length,
+        });
+      }
     } catch (e) {
-      if (operation.current()) error = errorMessage(e);
+      if (operation.current()) {
+        error = errorMessage(e);
+        reportError(e, { action: "teacher_export", exam_id: examId });
+      }
     } finally {
       if (operation.current()) exporting = false;
     }
@@ -250,11 +303,8 @@ export function createTeacherSession(
     get selected() {
       return selected;
     },
-    get analysis() {
-      return analysis;
-    },
-    get reports() {
-      return reports;
+    get refreshKey() {
+      return refreshKey;
     },
     get detail() {
       return detail;
@@ -276,7 +326,9 @@ export function createTeacherSession(
     },
     load,
     login,
-    select,
+    open,
+    refresh,
+    close,
     logout,
     exportData,
     saveSettings,

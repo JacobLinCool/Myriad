@@ -8,6 +8,10 @@ export interface Env {
   ASSETS?: Fetcher;
   OPENAI_API_KEY?: string;
   OPENAI_SEMANTIC_MODEL?: string;
+  /** PostHog project key; analytics is off without it. */
+  POSTHOG_KEY?: string;
+  /** PostHog ingestion host, e.g. https://us.i.posthog.com. */
+  POSTHOG_HOST?: string;
   ADMIN_TOKEN?: string;
   ADMIN_IDENTITIES?: string;
   APP_ORIGIN?: string;

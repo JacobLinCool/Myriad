@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { api } from "../api";
+  import { reportError, track } from "../posthog";
   let {
     scope,
     examId,
@@ -34,8 +35,10 @@
     try {
       await action();
     } catch (e) {
-      if (!controller.signal.aborted)
+      if (!controller.signal.aborted) {
         error = e instanceof Error ? e.message : "無法更新權限";
+        reportError(e, { action: "teacher_permissions", scope });
+      }
     } finally {
       busy = false;
     }
@@ -54,18 +57,17 @@
         { signal: controller.signal },
       );
       subject = "";
+      track("teacher_permission_changed", { scope, change: "grant" });
       await load();
       await onchanged?.();
     });
   }
 </script>
 
-<details class="permissions">
-  <summary
-    >{scope === "creation"
-      ? "全域管理 · 建立考試許可"
-      : "考試權限 · 共同管理者"}</summary
-  >
+<section class="permissions" aria-labelledby={`permissions-${scope}`}>
+  <h2 id={`permissions-${scope}`}>
+    {scope === "creation" ? "建立考試許可" : "共同管理者"}
+  </h2>
   <p class="muted">
     {scope === "creation"
       ? "許可持有人可以建立考試／作業，並成為擁有者。撤銷此許可不會移除既有考試權限。"
@@ -74,7 +76,9 @@
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   <div class="table-scroll">
     <table>
-      <thead><tr><th>登入服務</th><th>帳號</th><th></th></tr></thead><tbody>
+      <thead><tr><th>登入服務</th><th>帳號</th><th></th></tr></thead><tbody
+        class="ph-no-capture"
+      >
         {#each members as member}<tr
             ><td>{member.provider}</td><td>{member.subject}</td><td
               ><button
@@ -87,6 +91,10 @@
                       undefined,
                       { signal: controller.signal },
                     );
+                    track("teacher_permission_changed", {
+                      scope,
+                      change: "revoke",
+                    });
                     await load();
                     await onchanged?.();
                   })}
@@ -126,16 +134,13 @@
       >{scope === "creation" ? "授予建立許可" : "邀請共同管理"}</button
     >
   </form>
-</details>
+</section>
 
 <style>
   .permissions {
     margin: 20px 0;
     padding-bottom: 16px;
     border-bottom: 1px solid var(--border);
-  }
-  summary {
-    cursor: pointer;
   }
   form {
     display: grid;

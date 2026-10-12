@@ -60,10 +60,10 @@
         >
       </div>{/if}
     {#if session.parts[0] === "teacher"}
-      {#if teacher.current}<teacher.current.default />{:else}<LoadingView
-          kind="page"
-          label="正在載入教師工作台…"
-        />{/if}
+      {#if teacher.current}<teacher.current.default
+          path={session.path}
+          navigate={session.navigate}
+        />{:else}<LoadingView kind="page" label="正在載入教師工作台…" />{/if}
     {:else if session.eid && (session.loading || (!session.exam && !session.error))}<LoadingView
         kind={session.section === "problems" ? "workspace" : "page"}
         listed={session.listed}

@@ -1,6 +1,7 @@
 import type { PublicExam, ProblemPublic, AttemptSummary } from "@myriad/shared";
 import { getDeviceId } from "../device";
 import { SubmissionRejected } from "../api";
+import { reportError, track } from "../posthog";
 import { createRecorder, type Recorder } from "../telemetry";
 /** The compiler runtime is fetched on first use or by an idle warm-up. */
 const engine = () => import("../engine");
@@ -61,6 +62,7 @@ export async function prepare(session: ExecutionContext): Promise<void> {
   session.busy = true;
   session.activity = "prepare";
   session.error = "";
+  const start = performance.now();
   try {
     const { getEngine, compileCode, runLocal } = await engine();
     const record = await recorder(session.previewing, {
@@ -89,8 +91,17 @@ export async function prepare(session: ExecutionContext): Promise<void> {
     );
     if (r.code !== 0 || r.stdout.trim() !== "Myriad ready")
       throw new Error("環境測試未通過");
+    track("environment_prepared", {
+      outcome: "success",
+      duration_ms: performance.now() - start,
+    });
     if (visible()) session.notice = "準備完成，可以開始作答。";
   } catch (e) {
+    track("environment_prepared", {
+      outcome: "failure",
+      duration_ms: performance.now() - start,
+    });
+    reportError(e, { action: "prepare_environment" });
     if (visible()) session.error = (e as Error).message;
   } finally {
     session.busy = false;
@@ -135,6 +146,10 @@ export async function run(session: ExecutionContext): Promise<void> {
     });
     const b = await compileCode(snapshot.code, record);
     if (!b.success || !b.artifact) {
+      track("code_run", {
+        problem_id: snapshot.problem.id,
+        outcome: "compile_error",
+      });
       if (visible()) session.diagnostics = b.diagnostics;
       return;
     }
@@ -144,10 +159,19 @@ export async function run(session: ExecutionContext): Promise<void> {
       snapshot.problem.limits,
       record,
     );
+    track("code_run", {
+      problem_id: snapshot.problem.id,
+      outcome: "ran",
+      termination: r.termination,
+      duration_ms: r.durationMs,
+      has_input: !!snapshot.input,
+    });
     if (!visible()) return;
     session.output = `${r.stdout}${r.stderr ? `\n${r.stderr}` : ""}\n\n${r.termination} · ${r.durationMs.toFixed(1)} ms`;
     session.panelOpen = true;
   } catch (e) {
+    track("code_run", { problem_id: snapshot.problem.id, outcome: "error" });
+    reportError(e, { action: "run", problem_id: snapshot.problem.id });
     if (visible()) session.judgeError = (e as Error).message;
   } finally {
     session.busy = false;
@@ -176,6 +200,10 @@ export async function submit(
   }
   if (!session.exam || !session.problem) return;
   if (!resume && localStorage.getItem(session.pendingKey())) {
+    track("submission_failed", {
+      problem_id: session.problem.id,
+      reason: "pending_exists",
+    });
     session.panel = "judge";
     session.panelOpen = true;
     session.mobile = "results";
@@ -200,7 +228,8 @@ export async function submit(
     currentCode = session.code,
     key = session.pendingKey(),
     preview = session.previewing,
-    version = session.loadVersion;
+    version = session.loadVersion,
+    start = performance.now();
   const visible = () =>
     session.sameWorkspace(
       currentExam.id,
@@ -208,6 +237,13 @@ export async function submit(
       currentStudent,
       version,
     );
+  const failed = (reason: string, properties: Record<string, unknown> = {}) =>
+    track("submission_failed", {
+      problem_id: currentProblem.id,
+      resumed: resume,
+      reason,
+      ...properties,
+    });
   try {
     const s: Pending = resume
       ? JSON.parse(localStorage.getItem(key)!)
@@ -248,6 +284,7 @@ export async function submit(
     if (visible()) session.progress = "正在編譯…";
     const b = await compileCode(s.code, record);
     if (!b.success || !b.artifact) {
+      failed("compile_error");
       if (visible()) {
         session.diagnostics = b.diagnostics;
         session.progress = "編譯失敗，尚未提交";
@@ -255,6 +292,10 @@ export async function submit(
       return;
     }
     localStorage.setItem(key, JSON.stringify(s));
+    track("submission_started", {
+      problem_id: s.problem.id,
+      resumed: resume,
+    });
     if (visible()) {
       session.pending = true;
       session.verdicts = [];
@@ -284,6 +325,17 @@ export async function submit(
       },
       onComplete: (r) => {
         localStorage.removeItem(key);
+        track("submission_completed", {
+          problem_id: s.problem.id,
+          resumed: resume,
+          status: r.status,
+          score: r.score,
+          groups_passed: r.groupsPassed,
+          groups_total: r.groupsTotal,
+          all_groups_passed: r.groupsPassed === r.groupsTotal,
+          semantic_check_passed: r.semanticCheck?.passed ?? null,
+          duration_ms: performance.now() - start,
+        });
         if (visible()) {
           session.last = r;
           session.progress = "提交成功 · 已保存";
@@ -294,6 +346,14 @@ export async function submit(
     await session.loadHistory();
   } catch (e) {
     if (e instanceof SubmissionRejected) {
+      failed(
+        e.status === 429
+          ? "cooldown"
+          : e.status === 409
+            ? "version_changed"
+            : "rejected",
+        { status: e.status },
+      );
       localStorage.removeItem(key);
       // A replaced problem is reloaded in place; the draft stays as written.
       if (e.status === 409) await session.revalidate();
@@ -302,9 +362,13 @@ export async function submit(
         session.judgeError = e.message;
         session.progress = "尚未提交";
       }
-    } else if (visible()) {
-      session.judgeError = (e as Error).message;
-      session.progress = "提交未確認完成；可查詢並繼續既有提交";
+    } else {
+      failed("unconfirmed");
+      reportError(e, { action: "submit", problem_id: currentProblem.id });
+      if (visible()) {
+        session.judgeError = (e as Error).message;
+        session.progress = "提交未確認完成；可查詢並繼續既有提交";
+      }
     }
   } finally {
     session.busy = false;

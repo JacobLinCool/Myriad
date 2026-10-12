@@ -37,6 +37,10 @@ export default defineConfig({
         target: worker,
         changeOrigin: true,
       },
+      "/ingest": {
+        target: worker,
+        changeOrigin: true,
+      },
     },
   },
   preview: {

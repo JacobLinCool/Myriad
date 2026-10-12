@@ -17,8 +17,10 @@ import {
 } from "./core.js";
 import { attempts, summary, type AttemptRow } from "./attempts.js";
 import { auth, requireParticipant, studentAccount } from "./auth.js";
+import { background, captureException, proxyPostHog } from "./analytics.js";
 import { management } from "./management.js";
 import { teachers } from "./teacher.js";
+import { monitor } from "./monitor.js";
 export type { Env } from "./core.js";
 const app = new Hono<{ Bindings: Env }>();
 app.use("*", async (c, next) => {
@@ -41,6 +43,10 @@ app.onError((err, c) => {
     return c.json({ error: "Invalid request", details: err.issues }, 400);
   if (err instanceof SyntaxError) return c.json({ error: "Invalid JSON" }, 400);
   console.error(err);
+  captureException(c.env, background(c), err, {
+    method: c.req.method,
+    route: c.req.routePath,
+  });
   return c.json({ error: "Internal server error" }, 500);
 });
 app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now() }));
@@ -168,9 +174,11 @@ app.post("/api/telemetry", bodyLimit({ maxSize: 32768 }), async (c) => {
   );
   return c.json({ accepted: events.length });
 });
+app.all("/ingest/*", proxyPostHog);
 app.route("/", auth);
 app.route("/", attempts);
 app.route("/", teachers);
+app.route("/", monitor);
 app.route("/", management);
 app.get("/toolchains/*", async (c) => {
   return (await immutableObject(c, c.req.path.slice(1))) ?? c.notFound();

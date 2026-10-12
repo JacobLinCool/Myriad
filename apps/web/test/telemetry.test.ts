@@ -5,7 +5,7 @@ vi.mock("../src/lib/device", () => ({
 const context = {
   examId: "exam",
   studentId: "a",
-    identityKind: "guest",
+  identityKind: "guest",
   problemId: "p",
   mode: "local" as const,
 };

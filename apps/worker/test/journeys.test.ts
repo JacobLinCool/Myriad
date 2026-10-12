@@ -300,6 +300,163 @@ describe.sequential("real Worker / D1 journeys", () => {
     ).toBe(404);
     expect((await call("/api/exam")).status).toBe(404);
   });
+  it("shows each device an identity submitted from, with the network the server saw", async () => {
+    const submit = async (deviceId: string, ip: string, agent: string) => {
+      // Successive submissions from one identity wait out the cooldown.
+      await db.prepare("DELETE FROM submission_cooldowns").run();
+      const response = await mf.dispatchFetch(
+        "http://localhost/api/exams/first/attempts",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "CF-Connecting-IP": ip,
+            "User-Agent": agent,
+          },
+          body: JSON.stringify({ ...request("roaming"), deviceId }),
+        },
+      );
+      expect(response.status).toBe(201);
+    };
+    const [laptop, phone] = [crypto.randomUUID(), crypto.randomUUID()];
+    await submit(laptop, "203.0.113.1", "Laptop/1");
+    await submit(laptop, "203.0.113.2", "Laptop/1");
+    await submit(phone, "198.51.100.7", "Phone/2");
+    const analysis = (await (
+      await call(
+        "/api/teacher/exams/first/analysis",
+        "GET",
+        undefined,
+        teacherToken,
+      )
+    ).json()) as any;
+    const rows = analysis.identities.filter(
+      (r: any) => r.studentId === "roaming",
+    );
+    expect(rows).toHaveLength(2);
+    const byDevice = Object.fromEntries(rows.map((r: any) => [r.deviceId, r]));
+    expect(byDevice[laptop]).toMatchObject({
+      identityKind: "guest",
+      submissions: 2,
+      userAgents: 1,
+      userAgent: "Laptop/1",
+    });
+    expect(byDevice[laptop].ips.split(",").sort()).toEqual([
+      "203.0.113.1",
+      "203.0.113.2",
+    ]);
+    expect(byDevice[phone]).toMatchObject({
+      submissions: 1,
+      ips: "198.51.100.7",
+      userAgent: "Phone/2",
+    });
+    // A single-device identity is not listed.
+    expect(
+      analysis.identities.some((r: any) => r.studentId === "metrics"),
+    ).toBe(false);
+  });
+  it("serves each teacher tab its own data without reading every claim", async () => {
+    const get = async (path: string) => {
+      const response = await call(
+        `/api/teacher/exams/first${path}`,
+        "GET",
+        undefined,
+        teacherToken,
+      );
+      expect(response.status).toBe(200);
+      return (await response.json()) as any;
+    };
+    // tab-a passes every test; tab-b times out on every test.
+    for (const student of ["tab-a", "tab-b"]) {
+      await db.prepare("DELETE FROM submission_cooldowns").run();
+      const created = (await (
+        await call("/api/exams/first/attempts", "POST", request(student))
+      ).json()) as any;
+      const socket = await connect(created.attempt.id, created.token);
+      for (const index of [0, 1])
+        socket.ws.send(
+          JSON.stringify({
+            type: "claim",
+            claim:
+              student === "tab-a"
+                ? {
+                    index,
+                    status: "ok",
+                    checksum: await boundChecksum({
+                      salt: "test-salt-at-least-16",
+                      studentId: student,
+                      problemId: "p",
+                      index,
+                      innerDigest: "a".repeat(64),
+                    }),
+                  }
+                : { index, status: "tle" },
+          }),
+        );
+      await socket.wait((m) => m.attempt?.status === "complete");
+      socket.ws.close();
+    }
+    const overview = await get("/overview");
+    expect(overview.totals.students).toBeGreaterThanOrEqual(2);
+    const p = overview.problems.find(
+      (r: any) => r.problemId === "p" && r.problemVersion === version,
+    );
+    expect(p.participants).toBeGreaterThanOrEqual(2);
+    expect(p.passedParticipants).toBeGreaterThanOrEqual(1);
+    expect(p.passedParticipants).toBeLessThan(p.participants);
+
+    const page = await get("/students?q=tab-");
+    expect(page.total).toBe(2);
+    expect(page.students.map((s: any) => s.studentId)).toEqual([
+      "tab-a",
+      "tab-b",
+    ]);
+    expect(page.students[0].cells.p).toMatchObject({
+      attempts: 1,
+      latest: { status: "complete", passed: true, score: 1 },
+      selected: { passed: true, score: 1 },
+    });
+    expect(page.students[1].cells.p).toMatchObject({
+      latest: { status: "complete", passed: false },
+      selected: { passed: false, score: 0 },
+    });
+    // LIKE wildcards in the query are literal.
+    expect((await get("/students?q=tab%25")).total).toBe(0);
+
+    const problem = await get("/problems/p/submissions");
+    expect(problem.version).toBe(version);
+    expect(
+      problem.submissions.filter((s: any) => s.studentId.startsWith("tab-")),
+    ).toHaveLength(2);
+    expect(problem.submissions.every((s: any) => s.problemId === "p")).toBe(
+      true,
+    );
+    expect(
+      (
+        await call(
+          "/api/teacher/exams/first/problems/missing/submissions",
+          "GET",
+          undefined,
+          teacherToken,
+        )
+      ).status,
+    ).toBe(404);
+
+    expect(await get("/devices")).toMatchObject({
+      devices: expect.any(Array),
+      identities: expect.any(Array),
+    });
+    expect((await get("/performance")).timings).toEqual(expect.any(Array));
+    // The CLI still reads everything at once, with the same passed rule.
+    const all = await get("/analysis");
+    const mine = all.submissions.filter((s: any) =>
+      s.studentId.startsWith("tab-"),
+    );
+    expect(mine.map((s: any) => [s.studentId, s.passed])).toEqual([
+      ["tab-a", true],
+      ["tab-b", false],
+    ]);
+  });
   it("records resource measurements and exposes private, accurate monitoring", async () => {
     const req = { ...request("metrics"), code: "// 測試\nint main(){}" };
     const created = (await (

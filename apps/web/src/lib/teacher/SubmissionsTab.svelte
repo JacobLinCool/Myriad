@@ -1,14 +1,10 @@
 <script lang="ts">
-  import { tick as afterRender } from "svelte";
-  import type {
-    MonitoredSubmission,
-    SemanticCheckResult,
-  } from "@myriad/shared";
-  import type { Analysis, ExamDetail } from "./data";
+  import { tick as afterRender, untrack } from "svelte";
+  import type { SemanticCheckResult } from "@myriad/shared";
+  import type { ExamDetail, ProblemSubmissions } from "./data";
   import {
     metrics,
     statusLabel,
-    selectedSubmission,
     paretoFrontier,
     cohortKey,
     type Metric,
@@ -16,16 +12,35 @@
   import ParetoPlot from "./ParetoPlot.svelte";
   import Select from "../ui/Select.svelte";
   import { api } from "../api";
+  import { reportError, track } from "../posthog";
   import { date } from "../format";
-  let { analysis, detail }: { analysis: Analysis; detail: ExamDetail } =
-    $props();
-  let problemId = $state("");
-  let version = $state("");
+  import type { createTeacherSession } from "../state/teacher.svelte";
+  import { resource } from "./resource.svelte";
+  import Updated from "./Updated.svelte";
+  let {
+    session,
+    detail,
+  }: {
+    session: ReturnType<typeof createTeacherSession>;
+    detail: ExamDetail;
+  } = $props();
+  // `?problem=` and `?submission=` open a problem, or one submission, directly.
+  const linked = new URLSearchParams(location.search);
+  // The workspace keys this tab by exam, so the first problem is chosen once.
+  const firstProblem = untrack(
+    () =>
+      detail.problems.find((p) => p.id === linked.get("problem")) ??
+      detail.problems[0],
+  );
+  let problemId = $state(firstProblem?.id ?? "");
+  /** `""` is the version of submissions made before versions were recorded. */
+  let version = $state(firstProblem?.version ?? "");
+  let pendingSource = linked.get("submission") ?? "";
   let profile = $state("");
   let x = $state<Metric>("instructionCost"),
     y = $state<Metric>("memoryBytes");
   let search = $state(""),
-    onlyPassed = $state(true),
+    onlyPassed = $state(!pendingSource),
     logarithmic = $state(true);
   let selectedId = $state(""),
     code = $state<string | null>(null),
@@ -34,83 +49,63 @@
   let page = $state(0);
   let sourceHeading = $state<HTMLHeadingElement>();
   let sourceTrigger: HTMLElement | SVGElement | null = null;
-  async function openSource(id: string, event: Event) {
-    sourceTrigger = event.currentTarget as HTMLElement | SVGElement;
+  const data = resource("teacher_problem_submissions", (signal) =>
+    api<ProblemSubmissions>(
+      `/api/teacher/exams/${encodeURIComponent(detail.id)}/problems/${encodeURIComponent(problemId)}/submissions?version=${encodeURIComponent(version)}`,
+      "GET",
+      undefined,
+      { signal },
+    ),
+  );
+  $effect(() => {
+    void session.refreshKey;
+    if (!problemId) return;
+    void version;
+    void data.reload();
+    return data.cancel;
+  });
+  async function showSource(id: string) {
     selectedId = id;
     await afterRender();
     if (selectedId !== id || !sourceHeading) return;
     sourceHeading.focus({ preventScroll: true });
     sourceHeading.scrollIntoView({ block: "start", behavior: "instant" });
   }
+  function openSource(id: string, event: Event) {
+    sourceTrigger = event.currentTarget as HTMLElement | SVGElement;
+    return showSource(id);
+  }
   function closeSource() {
     selectedId = "";
     if (sourceTrigger?.isConnected) sourceTrigger.focus();
   }
+  // A linked submission opens once its problem's data arrives.
   $effect(() => {
-    if (!detail.problems.some((p) => p.id === problemId)) {
-      problemId = detail.problems[0]?.id ?? "";
-      version = detail.problems[0]?.version ?? "";
-    }
+    if (!pendingSource || !data.data) return;
+    const id = pendingSource;
+    pendingSource = "";
+    if (data.data.submissions.some((s) => s.id === id)) void showSource(id);
   });
-  const rows = $derived(analysis.submissions);
-  const people = $derived(
-    [...new Map(rows.map((s) => [s.participantId, s])).values()].sort((a, b) =>
-      a.studentId.localeCompare(b.studentId),
-    ),
+  const rows = $derived(data.data?.submissions ?? []);
+  const current = $derived(
+    detail.problems.find((p) => p.id === problemId)?.version ?? "",
   );
-  const visiblePeople = $derived(
-    people.filter((s) =>
-      s.studentId.toLowerCase().includes(search.toLowerCase()),
-    ),
-  );
-  const byStudentProblem = $derived.by(() => {
-    const map = new Map<string, MonitoredSubmission[]>();
-    for (const s of rows) {
-      const key = JSON.stringify([
-        s.participantId,
-        s.problemId,
-        s.problemVersion,
-      ]);
-      const group = map.get(key) ?? [];
-      group.push(s);
-      map.set(key, group);
-    }
-    return map;
-  });
-  function studentRows(
-    participant: string,
-    problem: ExamDetail["problems"][number],
-  ) {
-    return (
-      byStudentProblem.get(
-        JSON.stringify([participant, problem.id, problem.version]),
-      ) ?? []
-    );
-  }
-  const problemRows = $derived(rows.filter((s) => s.problemId === problemId));
   const versions = $derived([
     ...new Set([
-      detail.problems.find((p) => p.id === problemId)?.version ?? "",
-      ...problemRows.map((s) => s.problemVersion ?? ""),
+      current,
+      ...(data.data?.versions ?? []).map((v) => v.version ?? ""),
     ]),
   ]);
-  const versionRows = $derived(
-    problemRows.filter((s) => (s.problemVersion ?? "") === version),
-  );
-  const profiles = $derived([
-    ...new Set(versionRows.map(cohortKey).filter(Boolean)),
-  ]);
+  const profiles = $derived([...new Set(rows.map(cohortKey).filter(Boolean))]);
   const activeProfile = $derived(
     profiles.includes(profile) ? profile : (profiles[0] ?? ""),
   );
   const comparable = $derived(
-    versionRows.filter(
-      (s) => cohortKey(s) === activeProfile && activeProfile !== "",
-    ),
+    rows.filter((s) => cohortKey(s) === activeProfile && activeProfile !== ""),
   );
   const frontier = $derived(paretoFrontier(comparable, x, y));
   const filtered = $derived(
-    versionRows.filter(
+    rows.filter(
       (s) =>
         (!onlyPassed || s.passed) &&
         s.studentId.toLowerCase().includes(search.toLowerCase()),
@@ -135,6 +130,11 @@
     problemId = id;
     version = detail.problems.find((p) => p.id === id)?.version ?? "";
     selectedId = "";
+    // The address keeps the problem, so reloading returns to it.
+    const url = new URL(location.href);
+    url.searchParams.set("problem", id);
+    url.searchParams.delete("submission");
+    history.replaceState(history.state, "", url);
   }
   $effect(() => {
     problemId;
@@ -159,127 +159,34 @@
     )
       .then((r) => {
         if (!controller.signal.aborted) {
+          track("teacher_submission_viewed", { exam_id: examId });
           code = r.code;
           semanticCheck = r.semanticCheck;
         }
       })
       .catch((e) => {
-        if (!controller.signal.aborted)
+        if (!controller.signal.aborted) {
           codeError = e instanceof Error ? e.message : "無法載入程式碼";
+          reportError(e, {
+            action: "teacher_view_submission",
+            exam_id: examId,
+          });
+        }
       });
     return () => controller.abort();
   });
 </script>
 
-<section aria-labelledby="monitor-title" class="monitor">
+<section aria-labelledby="pareto-title" aria-busy={data.loading}>
   <header class="heading">
-    <h2 id="monitor-title">提交動態</h2>
-    <span class="muted"
-      >更新於 {new Date(analysis.updatedAt).toLocaleTimeString("zh-TW")}</span
-    >
+    <h2 id="pareto-title">資源分布與 Pareto frontier</h2>
+    {#if data.data}<Updated
+        at={data.data.updatedAt}
+        loading={data.loading}
+      />{/if}
   </header>
   <p class="muted">通過狀態與資源數值為暫定結果；正式成績以教師複驗為準。</p>
-  <div class="table-scroll">
-    <table>
-      <caption>各題狀態 · 目前題目版本</caption>
-      <thead
-        ><tr
-          ><th>題目</th><th>提交</th><th>已繳交人數</th><th>曾通過人數</th><th
-            >執行中</th
-          ><th>逾時／中止</th></tr
-        ></thead
-      >
-      <tbody
-        >{#each detail.problems as p}
-          {@const submissions = rows.filter(
-            (s) => s.problemId === p.id && s.problemVersion === p.version,
-          )}
-          <tr
-            ><th
-              ><button class="text-action" onclick={() => chooseProblem(p.id)}
-                >{p.title}</button
-              ></th
-            ><td>{submissions.length}</td><td
-              >{new Set(submissions.map((s) => s.participantId)).size}</td
-            ><td class="passed"
-              >{new Set(
-                submissions.filter((s) => s.passed).map((s) => s.participantId),
-              ).size}</td
-            ><td>{submissions.filter((s) => s.status === "running").length}</td
-            ><td
-              >{submissions.filter((s) =>
-                ["expired", "failed"].includes(s.status),
-              ).length}</td
-            ></tr
-          >
-        {/each}</tbody
-      >
-    </table>
-  </div>
-
-  <h3>學生繳交與通過狀態</h3>
-  <label for="monitor-search">搜尋學號</label><input
-    id="monitor-search"
-    type="search"
-    bind:value={search}
-    placeholder="輸入學號"
-  />
-  <p class="muted">
-    顯示曾提交的 {people.length} 位作答者；尚無班級名冊，未曾提交者不在此清單。每格顯示目前版本的最新狀態，以及依「{detail.policy ===
-    "best"
-      ? "最佳"
-      : "最後"}提交」選取的結果。
-  </p>
-  <div class="table-scroll matrix">
-    <table>
-      <thead
-        ><tr
-          ><th>學號</th>{#each detail.problems as p}<th>{p.title}</th
-            >{/each}</tr
-        ></thead
-      >
-      <tbody
-        >{#each visiblePeople as student}
-          <tr
-            ><th
-              >{student.studentId}<small
-                >{student.identityKind === "nycu" ? "NYCU" : "訪客"}</small
-              ></th
-            >
-            {#each detail.problems as p}
-              {@const attempts = studentRows(student.participantId, p)}
-              {@const latest = attempts.at(-1)}
-              {@const scored = selectedSubmission(attempts, detail.policy)}
-              <td
-                >{#if latest}<button
-                    class="cell"
-                    onclick={(event) => {
-                      chooseProblem(p.id);
-                      onlyPassed = false;
-                      void openSource(latest.id, event);
-                    }}
-                    ><span>{statusLabel(latest)}</span><small
-                      class:passed={scored?.passed}
-                      >{attempts.length} 次 · {scored
-                        ? `採計 ${(100 * scored.score).toFixed(0)}%${scored.passed ? " · 通過" : ""}`
-                        : "待完成"}</small
-                    ></button
-                  >{:else}<span class="muted">未繳交</span>{/if}</td
-              >
-            {/each}
-          </tr>
-        {:else}<tr
-            ><td colspan={detail.problems.length + 1} class="muted"
-              >{people.length
-                ? "沒有符合的學生。"
-                : "收到第一筆提交後會顯示學生狀態。"}</td
-            ></tr
-          >{/each}</tbody
-      >
-    </table>
-  </div>
-
-  <h3>資源分布與 Pareto frontier</h3>
+  {#if data.error}<p class="error" role="alert">{data.error}</p>{/if}
   <div class="controls">
     <Select
       label="題目"
@@ -293,7 +200,7 @@
       options={versions.map((v) => ({
         value: v,
         label: v
-          ? `${v.slice(0, 8)}${v === detail.problems.find((p) => p.id === problemId)?.version ? " · 目前" : ""}`
+          ? `${v.slice(0, 8)}${v === current ? " · 目前" : ""}`
           : "未記錄版本",
       }))}
       onchange={(v) => (version = v)}
@@ -327,7 +234,14 @@
       onchange={(v) => (profile = v)}
     />{/if}
   <div class="toggles">
-    <label><input type="checkbox" bind:checked={onlyPassed} />只看已通過</label
+    <label class="search"
+      >搜尋學號<input
+        id="monitor-search"
+        type="search"
+        bind:value={search}
+        placeholder="輸入學號"
+      /></label
+    ><label><input type="checkbox" bind:checked={onlyPassed} />只看已通過</label
     ><label
       ><input
         type="checkbox"
@@ -417,18 +331,15 @@
           {codeError}
         </p>{:else if code === null}<p role="status">載入程式碼…</p>{:else}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex (scrollable source must be keyboard accessible) -->
-        <pre tabindex="0" role="region" aria-label="提交的 C 程式碼"><code
-            >{code}</code
-          ></pre>{/if}
+        <pre
+          class="ph-no-capture"
+          tabindex="0"
+          role="region"
+          aria-label="提交的 C 程式碼"><code>{code}</code></pre>{/if}
     </section>{/if}
 </section>
 
 <style>
-  .monitor {
-    margin-top: 28px;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 24px;
-  }
   .heading {
     display: flex;
     align-items: center;
@@ -448,12 +359,6 @@
     display: block;
     color: var(--muted);
   }
-  caption {
-    text-align: left;
-    color: var(--muted);
-    font-size: 12px;
-    padding: 8px 0;
-  }
   th {
     text-align: left;
   }
@@ -472,23 +377,11 @@
     text-decoration: underline;
     text-underline-offset: 4px;
   }
-  .cell {
-    display: block;
-    background: none;
-    border: 0;
-    padding: 6px 0;
-    white-space: nowrap;
-    text-align: left;
-  }
-  .cell:hover,
   .text-action:hover {
     color: var(--focus);
   }
-  .matrix {
-    max-height: 420px;
-  }
   #monitor-search {
-    max-width: 320px;
+    width: 200px;
   }
   .controls {
     display: grid;

@@ -10,3 +10,7 @@ ADMIN_IDENTITIES=[]
 # Required only for problems with semanticCheck. Store production key with Wrangler secrets.
 OPENAI_API_KEY=
 OPENAI_SEMANTIC_MODEL=gpt-5.6-luna
+
+# Optional PostHog analytics. The browser reaches PostHog through this Worker's /ingest proxy.
+POSTHOG_KEY=
+POSTHOG_HOST=https://us.i.posthog.com

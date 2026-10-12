@@ -1,6 +1,13 @@
 import { onMount, onDestroy } from "svelte";
 import type { PublicExam, AttemptSummary } from "@myriad/shared";
 import { api } from "../api";
+import {
+  identify,
+  reportError,
+  resetIdentity,
+  setContext,
+  track,
+} from "../posthog";
 import { onEngineStatus, type EngineStatus } from "../engine-status";
 import { prepare, recorder, run, submit, type Activity } from "./execution";
 import { observeResources } from "../telemetry";
@@ -15,6 +22,8 @@ interface Fetched {
 }
 /** Prefetched exam responses are reused only briefly and only once. */
 const PREFETCH_TTL = 10000;
+/** A route the visitor cannot open now; shown, but not an error. */
+class Unavailable extends Error {}
 /** The exam a teacher asked to preview in this tab. */
 const PREVIEW_KEY = "myriad_preview";
 function storedPreview() {
@@ -146,6 +155,7 @@ export class StudentSession {
     } catch (e) {
       this.draftStatus = "error";
       this.error = `草稿儲存失敗：${errorMessage(e)}`;
+      reportError(e, { action: "save_draft" });
       return false;
     }
   };
@@ -174,6 +184,7 @@ export class StudentSession {
       // Storage may be unavailable; the in-memory state still ends the preview.
     }
     this.previewExam = null;
+    track("preview_exited");
     void this.load();
   };
   private loadDraft() {
@@ -277,8 +288,13 @@ export class StudentSession {
       this.exam = null;
       this.history = [];
     }
+    setContext({
+      app_area: route.parts[0] === "teacher" ? "teacher" : "student",
+      exam_id: keep ? this.exam?.id : null,
+      is_preview: keep && this.previewing,
+    });
     try {
-      if (!route.valid) throw new Error("找不到這個頁面");
+      if (!route.valid) throw new Unavailable("找不到這個頁面");
       if (route.parts[0] === "teacher") return;
       if (!route.examId) {
         const rows = await this.request<PublicExam[]>(
@@ -308,12 +324,23 @@ export class StudentSession {
         route.section === "problems" &&
         !loaded.problems.some((p) => p.id === route.problemId)
       )
-        throw new Error(
+        throw new Unavailable(
           this.now < loaded.startsAt
             ? "考試尚未開始，題目將於開始時開放。"
             : "題目不存在或目前不開放閱讀。",
         );
       this.exam = loaded;
+      setContext({
+        app_area: "student",
+        exam_id: loaded.id,
+        is_preview: !!loaded.preview,
+      });
+      if (!keep)
+        track("exam_opened", {
+          exam_status: loaded.status,
+          problem_count: loaded.problems.length,
+          identity_kind: this.identityKind,
+        });
       // The exam renders now; submission history streams in behind it.
       this.loading = false;
       if (this.now >= loaded.endsAt) return;
@@ -334,6 +361,9 @@ export class StudentSession {
         this.exam = null;
         this.history = [];
         this.error = errorMessage(e);
+        if (e instanceof Unavailable)
+          track("route_unavailable", { section: route.section });
+        else reportError(e, { action: "load_route" });
       }
     } finally {
       if (operation.current()) this.loading = this.refreshing = false;
@@ -407,7 +437,10 @@ export class StudentSession {
       }
       if (visible()) this.history = all.reverse();
     } catch (e) {
-      if (visible()) this.error = errorMessage(e);
+      if (visible()) {
+        this.error = errorMessage(e);
+        reportError(e, { action: "load_history" });
+      }
     } finally {
       if (operation.current()) this.historyBusy = false;
     }
@@ -420,6 +453,7 @@ export class StudentSession {
     this.student === sid;
   loginNYCU = () => {
     if (this.busy || !this.save()) return;
+    track("login_started", { provider: "nycu" });
     location.assign(
       `/api/auth/nycu/start?returnTo=${encodeURIComponent(this.path.startsWith("/exams") ? this.path : "/exams")}`,
     );
@@ -429,17 +463,24 @@ export class StudentSession {
     try {
       const result = await this.request<{
         nycuEnabled: boolean;
-        account: { label: string; kind: "nycu" } | null;
+        account: { analyticsId: string; label: string; kind: "nycu" } | null;
       }>("/api/auth/session", "GET", undefined, operation);
       if (!operation.current()) return;
       this.nycuEnabled = result.nycuEnabled;
       if (result.account) {
         this.student = result.account.label;
         this.identityKind = "nycu";
+        identify(result.account.analyticsId, {
+          provider: "nycu",
+          is_student: true,
+        });
       }
       this.authReady = true;
     } catch (e) {
-      if (operation.current()) this.error = errorMessage(e);
+      if (operation.current()) {
+        this.error = errorMessage(e);
+        reportError(e, { action: "refresh_identity" });
+      }
     }
   };
   useGuest = async () => {
@@ -450,12 +491,16 @@ export class StudentSession {
     try {
       await this.request("/api/auth/session", "DELETE", undefined, operation);
       if (operation.current()) {
+        // A guest is unverified, so the device starts a new anonymous person.
+        resetIdentity();
+        track("guest_selected");
         this.authReady = true;
         this.identityKind = "guest";
         this.identity();
       }
     } catch (e) {
       this.error = errorMessage(e);
+      reportError(e, { action: "use_guest" });
     } finally {
       this.authBusy = false;
     }
@@ -515,6 +560,7 @@ export class StudentSession {
         // Without storage the preview still lasts for this page.
       }
       this.previewExam = this.eid;
+      track("preview_started", { exam_id: this.eid });
       query.delete("preview");
       const rest = query.toString();
       window.history.replaceState(
@@ -533,6 +579,7 @@ export class StudentSession {
         authError = params.get("auth_error"),
         expected = params.get("expected") ?? "";
       if (authError) {
+        track("login_failed", { provider: "nycu", reason: authError });
         this.showIdentity = true;
         this.error =
           authError === "cancelled"

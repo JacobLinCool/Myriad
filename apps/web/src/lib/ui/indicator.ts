@@ -29,7 +29,7 @@ export function indicator(node: HTMLElement, selector: string) {
   mutations.observe(node, {
     subtree: true,
     childList: true,
-    attributeFilter: ["class", "aria-selected"],
+    attributeFilter: ["class", "aria-selected", "aria-current"],
   });
   const resize = new ResizeObserver(place);
   resize.observe(node);

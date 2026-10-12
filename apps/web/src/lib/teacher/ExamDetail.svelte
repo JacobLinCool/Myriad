@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Pencil, Download } from "lucide-svelte";
+  import { Pencil } from "lucide-svelte";
   import Select from "../ui/Select.svelte";
   import Markdown from "../ui/Markdown.svelte";
   import { date } from "../format";
@@ -14,11 +14,6 @@
     onsave: (settings: Partial<ExamSettings>) => Promise<boolean>;
   } = $props();
 
-  const statusLabel = {
-    upcoming: "尚未開始",
-    active: "進行中",
-    ended: "已結束",
-  };
   const policyLabel = { best: "每題取最佳提交", last: "每題取最後一次提交" };
   /** `datetime-local` works in the visitor's local time without seconds. */
   function toLocal(ms: number) {
@@ -88,15 +83,7 @@
 <section class="detail" aria-labelledby="exam-detail-title">
   <header class="detail-heading">
     <h2 id="exam-detail-title">考試資訊</h2>
-    <span class="status-badge">{statusLabel[detail.status]}</span>
     <div class="grow"></div>
-    {#if detail.revision}<a
-        class="export"
-        href={`/api/teacher/exams/${encodeURIComponent(detail.id)}/export`}
-        download
-        title="含歷次上傳、標準解與網站上目前的考試資訊"
-        ><Download size={14} />匯出題目包</a
-      >{/if}
     {#if !editing}<button onclick={edit}
         ><Pencil size={14} />編輯考試資訊</button
       >{/if}
@@ -197,7 +184,7 @@
   <h3>題目</h3>
   <p class="muted note">
     題目內容與測資只能在本機修改後以 CLI
-    上傳；版本由測資、預期輸出與限制決定，修改題敘不會改變版本。需要在另一台電腦修改時，先「匯出題目包」，再以
+    上傳；版本由測資、預期輸出與限制決定，修改題敘不會改變版本。需要在另一台電腦修改時，先在「成績與匯出」下載題目包，再以
     <code>myriad export &lt;目錄&gt; --file &lt;下載的檔案&gt;</code>
     還原成題目目錄。
   </p>
@@ -229,7 +216,7 @@
 
 <style>
   .detail {
-    margin-top: 25px;
+    margin-top: 0;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--border);
   }
@@ -241,24 +228,8 @@
   .detail-heading h2 {
     margin: 0;
   }
-  .detail-heading button,
-  .export {
+  .detail-heading button {
     font-size: 12px;
-  }
-  .export {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 8px 12px;
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    background: var(--surface-raised);
-    color: var(--text);
-    text-decoration: none;
-    transition: background-color var(--duration-fast) ease;
-  }
-  .export:hover {
-    background: var(--hover);
   }
   .facts {
     display: grid;

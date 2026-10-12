@@ -200,7 +200,7 @@
 </script>
 
 <div
-  class="h-full w-full overflow-hidden"
+  class="ph-no-capture h-full w-full overflow-hidden"
   style="font-size: {fontSize}px;"
   bind:this={editorElement}
 ></div>
