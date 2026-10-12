@@ -3,3 +3,10 @@ ATTEMPT_SECRET=replace-with-at-least-32-random-characters
 APP_ORIGIN=http://localhost:8787
 NYCU_CLIENT_ID=
 NYCU_CLIENT_SECRET=
+
+# Verified provider identities allowed to administer creation grants.
+ADMIN_IDENTITIES=[]
+
+# Required only for problems with semanticCheck. Store production key with Wrangler secrets.
+OPENAI_API_KEY=
+OPENAI_SEMANTIC_MODEL=gpt-5.6-luna

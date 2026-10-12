@@ -139,6 +139,7 @@ const gcdTests = problem(
   "gcd",
   {
     title: "最大公因數",
+    semanticCheck: "檢查程式是否遵守以下題面實作要求：\n1. 定義名為 gcd 的函式，回傳 int，接收兩個 int 參數（相容於 int gcd(int a, int b)；參數名稱不限），實際負責計算並回傳最大公因數，可呼叫輔助函式。\n2. main 實際呼叫 gcd 處理輸入，並使用其回傳值產生各組答案；只有宣告、未使用函式、註解、或呼叫後丟棄結果而另算答案，不符合要求。\n3. 使用迴圈逐組處理輸入的 T 組整數。\n只檢查上述實作方式。gcd 可用迴圈、遞迴或其他合理演算法，不限制區域變數名稱、輔助函式或排版。數值正確性與輸出格式由測資判斷。",
     order: 0,
     sampleCases: [
       { input: "2\n12 18\n24 36\n", output: "GCD: 6\nGCD: 12\n" },
@@ -325,6 +326,7 @@ const reduceTests = problem(
   "reduce",
   {
     title: "分數約分",
+    semanticCheck: "檢查程式是否遵守以下題面實作要求：\n1. 定義名為 reduce 的函式，回傳 void，依序接收兩個 int 與兩個 int 指標（相容於 void reduce(int numerator, int denominator, int *reduced_numerator, int *reduced_denominator)；參數名稱不限）。\n2. reduce 的實際約分流程使用 gcd 函式取得最大公因數（gcd 回傳 int 且接收兩個 int；可經由輔助函式呼叫），並透過兩個輸出指標寫回約分後的分子與分母。\n3. 程式實際呼叫 reduce 處理有效分數，使用指標寫回的結果產生輸出。只有宣告、未使用函式、假呼叫或以全域變數取代兩個指標寫回結果，不符合要求。分母為零可先攔截，不必呼叫 reduce。\n4. 使用迴圈逐一處理輸入的 T 個分數。\n只檢查上述實作方式。不限制 gcd 採迴圈、遞迴或其他合理演算法，不限制輔助函式、參數名稱或排版。數值正確性與輸出格式由測資判斷。",
     order: 1,
     sampleCases: [
       {

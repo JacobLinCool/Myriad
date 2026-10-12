@@ -41,7 +41,17 @@ Uploads may replace the current problems at any time. Each problem carries a tea
 
 ## Teacher preview
 
-Opening `/exams/<id>?preview=1` stores the exam in session storage for the tab and strips the query. While an exam is requested for preview, exam, history, test-input, attempt and WebSocket requests carry `preview=1`; the Worker grants it only to the owner's teacher session and marks the response with `preview: true`. `previewing` reflects that grant, and `started` (previewing or past the start) gates submission, history and navigation instead of the raw start time. Preview work uses a separate pending-submission key and a silent telemetry recorder. The banner explains the mode, or that the teacher session is missing, and `exitPreview` returns to the student view.
+Opening `/exams/<id>?preview=1` stores the exam in session storage for the tab and strips the query. While an exam is requested for preview, exam, history, test-input, attempt and WebSocket requests carry `preview=1`; the Worker grants it to authenticated owners and exam collaborators and marks the response with `preview: true`. `previewing` reflects that grant, and `started` (previewing or past the start) gates submission, history and navigation instead of the raw start time. Preview work uses a separate pending-submission key and a silent telemetry recorder. The banner explains the mode, or that the teacher session is missing, and `exitPreview` returns to the student view.
+
+## Teacher submission monitoring
+
+`SubmissionMonitor.svelte` receives exam detail and analysis through the teacher session. Exam data loads when an exam is selected and refreshes only through the teacher’s refresh button; there is no automatic polling. Switching exams remounts the monitor; refreshing the same exam preserves its filters. The exam-management-only analysis endpoint returns compact `MonitoredSubmission` records in submission-sequence order, excludes preview attempts and marks overdue running attempts as expired. Source code is fetched separately when a submission is opened, with cancellation on selection changes.
+
+Problem summaries and the student matrix use each problem's current version. Each matrix cell shows the latest attempt's status alongside the completed attempt selected by the exam's best/last policy; best-score ties select the latest sequence. Participants are identified by `participantId`, with student ID and identity kind displayed. There is no class roster: only participants who have submitted appear, so the matrix cannot identify students who have never submitted.
+
+Pass status and resource measurements are provisional; final grades depend on teacher verification. Instruction cost is summed across reported test claims, memory is their peak byte count, and code size is the UTF-8 byte length of the stored source. Each resource aggregate is null unless every reported claim provides that metric; the profile and model must each be present and consistent across claims. Historical submissions can lack versions or measurements, which remain explicitly missing rather than being inferred.
+
+`monitoring.ts` computes a two-axis Pareto frontier among completed, passed submissions with both selected metrics in the same problem-version and cost-profile/model cohort. Both axes minimize their metric; equal points are retained. Search and the pass-only display filter do not redefine the cohort's frontier. The scatterplot excludes incomplete submissions, missing selected metrics and other measurement cohorts; the submission table retains those records for inspection. Axes support linear or `log1p` scaling, and point size increases with code size. Chart points and table entries open the same source panel, with keyboard activation and focus restoration.
 
 ## Data consistency
 
@@ -64,3 +74,16 @@ Teacher export captures its exam ID before the first page and uses that ID for a
 Run `pnpm --filter=@myriad/web test`, `pnpm --filter=@myriad/web exec svelte-check --threshold warning`, and `pnpm build`. `pnpm test` also covers the shared contracts, CLI and actual Worker/D1 lifecycle.
 
 Component tests mount real Svelte components in JSDOM; native layout, dialog focus containment, pointer behavior and WASM execution also require browser checks. The test suite covers same-exam navigation continuity, prefetch consumption and offsets, judge progress, keyboard selection/dismissal, option mutation, popup bounds, tab focus, dialog/disclosure behavior, divider cancellation, editor undo isolation, stale requests, export pagination, identity/draft isolation and execution snapshots. Browser checks use the local Worker preview at desktop, tablet and mobile widths.
+
+
+## Management identities and permissions
+
+There is no course entity. Verified login providers resolve `(provider, subject)` accounts; currently NYCU OAuth has a session adapter. `ADMIN_IDENTITIES` explicitly maps verified provider identities to platform administrators. Deployment credentials provide a separate platform service identity. Admin status does not automatically grant access to exam data.
+
+`exam_creation_grants` controls creation only. `exam_catalog.owner_id` identifies the creator; `exam_collaborators` grants access to an individual exam. Owners alone can change collaborators. Owners and collaborators can update, publish, preview, export and review their exams. Revoking a creation grant preserves existing exam permissions; removing a collaborator takes effect on subsequent requests, including existing sessions and API tokens. `PermissionEditor.svelte` exposes creation grants to administrators and collaborators to owners. `PersonalTokens.svelte` issues and revokes account-bound CLI credentials without storing plaintext tokens locally.
+
+Publication compares `expectedRevision` against the active revision atomically, preventing a concurrent publication from being overwritten silently. `stage` and `publish` are separately available through the CLI; `deploy` composes them. Shared toolchain mutation requires platform administration. Historical teacher identities, tokens, sessions and exam ownership are migrated explicitly, with no runtime ownership fallback.
+
+### Saved submission resource summary
+
+`ResourceSummary.svelte` follows the saved score in the judge panel. Execution claims include UTF-8 input bytes and the runtime's instruction cost, memory, and cost identity; Worker verdicts persist and return these measurements on completion and reconnection. Historical verdicts without measurements remain unrecorded.

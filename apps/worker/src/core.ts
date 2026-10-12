@@ -1,3 +1,4 @@
+import { account, isAdministrator, canManage } from "./permissions.js";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { sha256Hex, type BundleContent } from "@myriad/shared";
@@ -5,7 +6,10 @@ export interface Env {
   DB: D1Database;
   BUCKET: R2Bucket;
   ASSETS?: Fetcher;
+  OPENAI_API_KEY?: string;
+  OPENAI_SEMANTIC_MODEL?: string;
   ADMIN_TOKEN?: string;
+  ADMIN_IDENTITIES?: string;
   APP_ORIGIN?: string;
   NYCU_CLIENT_ID?: string;
   NYCU_CLIENT_SECRET?: string;
@@ -14,7 +18,7 @@ export interface Env {
 export type AppContext = Context<{ Bindings: Env }>;
 export interface ExamRow {
   id: string;
-  teacher_id: string;
+  owner_id: string;
   revision: string | null;
   title: string;
   starts_at: number;
@@ -36,37 +40,16 @@ export function fail(
 export function bearer(c: AppContext) {
   return c.req.header("Authorization")?.match(/^Bearer (.+)$/)?.[1];
 }
-export function requireAdmin(c: AppContext) {
-  if (!c.env.ADMIN_TOKEN || bearer(c) !== c.env.ADMIN_TOKEN)
-    fail("Unauthorized", 401);
+export async function requireAdmin(c: AppContext) {
+  if (c.env.ADMIN_TOKEN && bearer(c) === c.env.ADMIN_TOKEN) return;
+  const identity = await account(c);
+  if (!identity) fail("Administrator authentication required", 401);
+  if (!isAdministrator(c, identity)) fail("Administrator required", 403);
 }
 export async function teacher(c: AppContext): Promise<string> {
-  const token = bearer(c);
-  const session = c.req
-    .header("Cookie")
-    ?.match(/(?:^|;\s*)myriad_teacher=([^;]+)/)?.[1];
-  if (!token && !session) fail("Teacher authentication required", 401);
-  let row: { id: string } | null;
-  if (token)
-    row = await c.env.DB.prepare(
-      "SELECT id FROM teachers WHERE token_hash=? AND revoked_at IS NULL",
-    )
-      .bind(await sha256Hex(token))
-      .first();
-  else {
-    if (
-      !["GET", "HEAD"].includes(c.req.method) &&
-      c.req.header("Origin") !== new URL(c.req.url).origin
-    )
-      fail("Invalid session origin", 403);
-    row = await c.env.DB.prepare(
-      "SELECT t.id FROM teachers t JOIN teacher_sessions s ON s.teacher_id=t.id WHERE s.hash=? AND s.expires_at>? AND t.revoked_at IS NULL",
-    )
-      .bind(await sha256Hex(session!), Date.now())
-      .first();
-  }
-  if (!row) fail("Teacher credential invalid or revoked", 401);
-  return row.id;
+  const identity = await account(c);
+  if (!identity) fail("Management authentication required", 401);
+  return identity.id;
 }
 // Middleware and handlers of one request share the exam row and preview check.
 const examOf = new WeakMap<AppContext, Promise<ExamRow>>();
@@ -82,12 +65,16 @@ async function loadExam(c: AppContext, owned: boolean): Promise<ExamRow> {
   const row = await c.env.DB.prepare("SELECT * FROM exam_catalog WHERE id=?")
     .bind(c.req.param("eid"))
     .first<ExamRow>();
-  if (!row || (owner && row.teacher_id !== owner) || (!owned && !row.revision))
+  if (
+    !row ||
+    (owner && !(await canManage(c, row.id, row.owner_id, owner))) ||
+    (!owned && !row.revision)
+  )
     fail("Exam not found", 404);
   return row;
 }
 /**
- * A teacher opening their own published exam with `?preview=1` sees it as a
+ * A teacher opening a published exam they manage with `?preview=1` sees it as a
  * student would, outside its schedule. A preview request from anyone else is
  * rejected rather than silently downgraded.
  */
@@ -97,8 +84,8 @@ export function previewing(c: AppContext, e: ExamRow): Promise<boolean> {
     result = (async () => {
       if (c.req.query("preview") !== "1") return false;
       const tid = await teacher(c).catch(() => null);
-      if (tid !== e.teacher_id)
-        fail("Teacher preview requires the exam owner's teacher session", 403);
+      if (!tid || !(await canManage(c, e.id, e.owner_id, tid)))
+        fail("Teacher preview requires exam management permission", 403);
       return true;
     })();
     previewOf.set(c, result);

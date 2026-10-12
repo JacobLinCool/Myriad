@@ -46,13 +46,16 @@ it("builds self-contained content and deploys the verified snapshot after source
   vi.stubEnv("MYRIAD_TEACHER_TOKEN", "secret");
   const fetcher = vi
     .fn()
-    .mockResolvedValueOnce(new Response("{}"))
+    .mockResolvedValueOnce(Response.json({ currentRevision: null }))
     .mockResolvedValueOnce(
       new Response(JSON.stringify({ url: "/exams/test" })),
     );
   vi.stubGlobal("fetch", fetcher);
   await deploy(dir, { remote: "https://judge.test" });
   expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual(bundle);
+  expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({
+    expectedRevision: null,
+  });
 });
 it("does not publish a validation bundle when references fail", async () => {
   await initialize(dir);
@@ -103,7 +106,10 @@ it("rejects mutated bundles before any remote publication", async () => {
   await build(dir);
   const bundle = await readBundle(dir);
   bundle.content.inputs[0].content = "tampered";
-  await fs.writeFile(path.join(dir, ".myriad/bundle.json"), JSON.stringify(bundle));
+  await fs.writeFile(
+    path.join(dir, ".myriad/bundle.json"),
+    JSON.stringify(bundle),
+  );
   await expect(readBundle(dir)).rejects.toThrow("digest");
 });
 it("versions problems by judged content and verifies each submission with its own upload", async () => {
@@ -189,6 +195,13 @@ it("versions problems by judged content and verifies each submission with its ow
 });
 it("exports an editable directory that rebuilds to the same problem versions with site settings", async () => {
   await initialize(dir);
+  const problemFile = path.join(dir, "problems/aplusb/problem.json");
+  const problem = JSON.parse(await fs.readFile(problemFile, "utf8"));
+  const metadata = {
+    template: "int solve(int a, int b) { return 0; }",
+    semanticCheck: "必須以指標實作",
+  };
+  await fs.writeFile(problemFile, JSON.stringify({ ...problem, ...metadata }));
   await build(dir);
   const uploaded = await readBundle(dir);
   expect(uploaded.content.solutions?.[0].source).toContain("scanf");
@@ -222,6 +235,7 @@ it("exports an editable directory that rebuilds to the same problem versions wit
   await expect(exportExam(target, { file })).rejects.toThrow("--force");
   await build(target);
   const rebuilt = await readBundle(target);
+  expect(rebuilt.content.problems[0]).toMatchObject(metadata);
   expect(rebuilt.content.problems.map((p) => p.version)).toEqual(
     uploaded.content.problems.map((p) => p.version),
   );
@@ -233,4 +247,30 @@ it("exports an editable directory that rebuilds to the same problem versions wit
       ),
     ),
   ).toEqual(uploaded);
+});
+it("bundles per-problem templates and versions semantic requirements", async () => {
+  await initialize(dir);
+  const file = path.join(dir, "problems/aplusb/problem.json");
+  const meta = JSON.parse(await fs.readFile(file, "utf8"));
+  meta.template = "int solve(int a, int b) { return 0; }";
+  meta.semanticCheck = "必須以指標實作";
+  await fs.writeFile(file, JSON.stringify(meta));
+  await build(dir);
+  const bundle = await readBundle(dir);
+  expect(bundle.content.problems[0]).toMatchObject({
+    template: meta.template,
+    semanticCheck: meta.semanticCheck,
+  });
+  const before = bundle.content.problems[0].version;
+  meta.template = "int solve(void);";
+  await fs.writeFile(file, JSON.stringify(meta));
+  await build(dir);
+  expect((await readBundle(dir)).content.problems[0].version).toBe(before);
+  meta.semanticCheck = "必須遞迴";
+  await fs.writeFile(file, JSON.stringify(meta));
+  await build(dir);
+  expect((await readBundle(dir)).content.problems[0].version).not.toBe(before);
+  meta.semanticCheck = "字".repeat(2001);
+  await fs.writeFile(file, JSON.stringify(meta));
+  await expect(build(dir)).rejects.toThrow();
 });

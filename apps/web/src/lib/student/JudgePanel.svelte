@@ -32,6 +32,7 @@
       | "verdicts"
     >;
   } = $props();
+  import ResourceSummary from "./ResourceSummary.svelte";
   import Tabs from "../ui/Tabs.svelte";
 
   const total = $derived(session.problem?.testCount ?? 0);
@@ -147,7 +148,28 @@
                       >已保存 · {score.current.toFixed(0)}%</span
                     ></strong
                   >
-                </div>{/if}
+                </div>
+                {#if session.last.semanticCheck}
+                  <div class="semantic-result" role="status">
+                    <strong
+                      >{session.last.semanticCheck.passed
+                        ? "實作要求 · 通過"
+                        : "實作要求 · 未通過"}</strong
+                    >
+                    {#if !session.last.semanticCheck.passed}<p>
+                        {session.last.semanticCheck.reason}
+                      </p>
+                      <p class="muted">
+                        本次得分為 0%；測資得分 {(
+                          (session.last.testScore ?? 0) * 100
+                        ).toFixed(0)}%。
+                      </p>{/if}
+                    {#if session.last.semanticCheck.truncated}<p class="muted">
+                        僅檢查程式碼前 20,000 個字元。
+                      </p>{/if}
+                  </div>
+                {/if}
+                <ResourceSummary verdicts={session.last.verdicts} />{/if}
             {:else}<button
                 disabled={session.busy || session.historyBusy}
                 onclick={() =>
@@ -307,6 +329,13 @@
     }
   }
 
+  .semantic-result {
+    margin: 16px 0;
+    font-size: 12px;
+  }
+  .semantic-result p {
+    margin: 6px 0;
+  }
   .history-item {
     display: grid;
     grid-template-columns: 1fr auto;

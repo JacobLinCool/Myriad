@@ -1,5 +1,17 @@
 import { api } from "../api";
+export interface ManagementAccess {
+  account: {
+    id: string;
+    provider: string;
+    subject: string;
+    name: string;
+  } | null;
+  canCreateExams: boolean;
+  isAdmin: boolean;
+  nycuEnabled: boolean;
+}
 export interface TeacherExam {
+  ownerId: string;
   id: string;
   title: string;
   startsAt: number;
@@ -8,6 +20,8 @@ export interface TeacherExam {
 }
 /** Read-only exam detail; only the settings fields are editable on the site. */
 export interface ExamDetail {
+  ownerId: string;
+  canManageMembers: boolean;
   id: string;
   title: string;
   startsAt: number;
@@ -31,6 +45,8 @@ export type ExamSettings = Pick<
   "title" | "startsAt" | "endsAt" | "rules" | "policy"
 >;
 export interface Analysis {
+  updatedAt: number;
+  submissions: import("@myriad/shared").MonitoredSubmission[];
   totals: { attempts: number; students: number; completed: number };
   devices: {
     deviceId: string;

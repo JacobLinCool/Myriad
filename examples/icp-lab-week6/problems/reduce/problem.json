@@ -64,5 +64,6 @@
         "20.in"
       ]
     }
-  ]
+  ],
+  "semanticCheck": "檢查程式是否遵守以下題面實作要求：\n1. 定義名為 reduce 的函式，回傳 void，依序接收兩個 int 與兩個 int 指標（相容於 void reduce(int numerator, int denominator, int *reduced_numerator, int *reduced_denominator)；參數名稱不限）。\n2. reduce 的實際約分流程使用 gcd 函式取得最大公因數（gcd 回傳 int 且接收兩個 int；可經由輔助函式呼叫），並透過兩個輸出指標寫回約分後的分子與分母。\n3. 程式實際呼叫 reduce 處理有效分數，使用指標寫回的結果產生輸出。只有宣告、未使用函式、假呼叫或以全域變數取代兩個指標寫回結果，不符合要求。分母為零可先攔截，不必呼叫 reduce。\n4. 使用迴圈逐一處理輸入的 T 個分數。\n只檢查上述實作方式。不限制 gcd 採迴圈、遞迴或其他合理演算法，不限制輔助函式、參數名稱或排版。數值正確性與輸出格式由測資判斷。"
 }

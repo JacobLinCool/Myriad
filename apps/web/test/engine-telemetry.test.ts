@@ -119,6 +119,14 @@ it("queries a saved completion after a lost finish acknowledgement without creat
             }),
           }),
         );
+      if (message.type === "claim")
+        expect(message.claim.metrics).toEqual({
+          inputBytes: 4,
+          instructionCost: 17,
+          memoryBytes: 65536,
+          costProfile: "test",
+          costModel: "test",
+        });
       if (message.type === "finish") {
         saved = true;
         this.close();
@@ -150,6 +158,12 @@ it("queries a saved completion after a lost finish acknowledgement without creat
     code: 0,
     stdout: "3\n",
     durationMs: 1,
+    metrics: {
+      cost: 17,
+      memoryBytes: 65536,
+      costProfile: "test",
+      costModel: "test",
+    },
   });
   await streamJudgeSubmission({
     record,

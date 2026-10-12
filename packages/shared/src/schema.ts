@@ -35,6 +35,7 @@ export const ProblemPublicSchema = z.object({
   order: z.number().int().nonnegative(),
   title: z.string().min(1),
   statementMd: z.string(),
+  template: z.string().max(200000).optional(),
   testCount: z.number().int().nonnegative(),
   groups: z.array(TestGroupSchema),
   limits: ProblemLimitsSchema,
@@ -56,13 +57,54 @@ export const ProblemPublicSchema = z.object({
 });
 export type ProblemPublic = z.infer<typeof ProblemPublicSchema>;
 
+/** Teacher-authored definition; semantic instructions never enter student responses. */
+export const ProblemDefinitionSchema = ProblemPublicSchema.extend({
+  semanticCheck: z
+    .string()
+    .trim()
+    .min(1)
+    .refine(
+      (value) => [...value].length <= 2000,
+      "Semantic instruction must not exceed 2000 characters",
+    )
+    .optional(),
+});
+
+export const ExecutionMeasurementsSchema = z
+  .object({
+    inputBytes: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(Number.MAX_SAFE_INTEGER)
+      .optional(),
+    instructionCost: z
+      .number()
+      .finite()
+      .nonnegative()
+      .max(Number.MAX_SAFE_INTEGER)
+      .nullable(),
+    memoryBytes: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(Number.MAX_SAFE_INTEGER)
+      .nullable(),
+    // Profiles include multiple toolchain digests and a runtime digest.
+    costProfile: z.string().min(1).max(1024),
+    costModel: z.string().min(1).max(128),
+  })
+  .strict();
+
 export const TestClaimSchema = z.discriminatedUnion("status", [
   z.object({
+    metrics: ExecutionMeasurementsSchema.optional(),
     index: z.number().int().nonnegative(),
     status: z.literal("ok"),
     checksum: z.string().regex(/^[0-9a-f]{64}$/i),
   }),
   z.object({
+    metrics: ExecutionMeasurementsSchema.optional(),
     index: z.number().int().nonnegative(),
     status: z.enum(["tle", "mle", "re", "ole"]),
   }),
@@ -80,6 +122,7 @@ export const TestVerdictStatusSchema = z.enum([
 export type TestVerdictStatus = z.infer<typeof TestVerdictStatusSchema>;
 
 export const TestVerdictSchema = z.object({
+  metrics: ExecutionMeasurementsSchema.optional(),
   index: z.number().int().nonnegative(),
   status: TestVerdictStatusSchema,
 });

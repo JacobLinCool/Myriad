@@ -240,6 +240,7 @@ export interface StreamJudgeOptions {
   preview?: boolean;
   onVerdict: (verdict: { index: number; status: string }) => void;
   onProgress: (current: number, total: number) => void;
+  onSemantic?: () => void;
   onTerminal?: (result: import("@myriad/shared").AttemptSummary) => void;
   onComplete: (result: import("@myriad/shared").AttemptSummary) => void;
 }
@@ -341,6 +342,11 @@ export async function streamJudgeSubmission(
               done(new Error(msg.error));
               return;
             }
+            if (msg.type === "semantic") {
+              options.onSemantic?.();
+              clearTimeout(timeout);
+              timeout = setTimeout(() => ws.close(), 40000);
+            }
             if (msg.type === "verdict") options.onVerdict(msg.verdict);
             if (msg.type === "ready" && !work) {
               clearTimeout(timeout);
@@ -417,11 +423,26 @@ export async function streamJudgeSubmission(
                         }
                       : { index, status: term };
                   if (settled || ws.readyState !== WebSocket.OPEN) return;
-                  ws.send(JSON.stringify({ type: "claim", claim }));
+                  ws.send(
+                    JSON.stringify({
+                      type: "claim",
+                      claim: {
+                        ...claim,
+                        metrics: {
+                          inputBytes: new TextEncoder().encode(input)
+                            .byteLength,
+                          instructionCost: result.metrics.cost,
+                          memoryBytes: result.metrics.memoryBytes,
+                          costProfile: result.metrics.costProfile,
+                          costModel: result.metrics.costModel,
+                        },
+                      },
+                    }),
+                  );
                 }
                 if (ws.readyState === WebSocket.OPEN) {
                   ws.send(JSON.stringify({ type: "finish" }));
-                  timeout = setTimeout(() => ws.close(), 10000);
+                  timeout = setTimeout(() => ws.close(), 40000);
                 }
               })().catch((error) => done(error));
             }

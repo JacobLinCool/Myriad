@@ -4,7 +4,7 @@
 
 ## 完整週期
 
-1. 管理員核發教師憑證（`teachers create`）。
+1. 全域管理員依 `(provider, subject)` 授予建立考試許可（`permissions grant`）。助教登入 `/teacher` 建立個人 CLI 憑證。
 2. 教師與 agent 在本機出題：`init` → 編輯 → `build` → `test`。
 3. `deploy` 上傳整包並立即生效。之後任何時候（包含考試中）都可以修改後重新 `deploy`，以覆蓋方式取代目前版本。
 4. 在 `/teacher` 檢視考試資訊、狀態與每題版本；開啟「以學生視角預覽」實際作答與判題。
@@ -64,7 +64,7 @@ node packages/cli/bin/myriad.js --json deploy ./midterm --remote https://your-ju
 node packages/cli/bin/myriad.js --json status --exam midterm --remote https://your-judge.example
 ```
 
-`deploy` 僅讀取並驗證 bundle，不重新讀取來源測資；先 staging，再原子更新目前版本。失敗不影響目前版本。相同 bundle 重試可重用已保存的內容；中斷時安全重傳同版本。工具鏈相同內容可重送，同一路徑不同內容會拒絕覆寫。教師只能操作自己建立或由管理員指定的舊考試。
+`deploy` 僅讀取並驗證 bundle，不重新讀取來源測資；先 staging，再以回傳的 `currentRevision` 作為預期版本原子更新；別人已先發布時回傳 409，重新檢視後再發布。失敗不影響目前版本。相同 bundle 重試可重用已保存的內容；中斷時安全重傳同版本。工具鏈相同內容可重送，同一路徑不同內容會拒絕覆寫。建立新考試需有建立許可；既有考試只允許 owner 與受邀共同管理者操作。只有 owner 能增刪共同管理者。共用工具鏈僅限全域管理員上傳。
 
 `deploy` 隨時可執行，包含考試進行中，以覆蓋方式取代目前版本。回傳：
 
@@ -147,3 +147,12 @@ node packages/cli/bin/myriad.js --json results upload ./midterm --remote https:/
 6. `pnpm test` 補充驗證斷線續傳、重送／衝突 claim、並行冷卻、截止邊界、教師撤銷與空報告。
 
 本機測試調整時鐘或直接更新隔離 fixture 的截止時間只用於加速測試，不是產品 API，也不可用於正式考試修改。
+
+
+## 建立許可與考試協作
+
+全域管理員由 `ADMIN_IDENTITIES` 指定經驗證登入服務的帳號，目前支援 NYCU OAuth；部署用 `ADMIN_TOKEN` 是獨立的平台服務憑證。助教不需要取得全域憑證。管理員可在 `/teacher` 的全域管理區或以 `permissions grant --provider nycu --subject USERNAME` 授予建立許可，`permissions revoke ACCOUNT_ID` 撤銷。撤銷只阻止建立新考試，既有 owner／共同管理資格保留。
+
+owner 在考試權限區加入共同管理者，或使用 `members invite --exam EXAM_ID --provider nycu --subject USERNAME`。共同管理者能修改、發布、預覽、匯出與複判該考試，但無法邀請其他人，也不因此取得建立新考試的許可。`members list --exam EXAM_ID` 列出成員，`members remove ACCOUNT_ID --exam EXAM_ID` 移除；既有 session 與 API 憑證下一次請求即受新權限限制。
+
+需要分開檢查與釋出時，先 `stage DIR`，檢查其 `revision` 與 `currentRevision`，再 `publish --exam EXAM_ID --revision REVISION --expected-revision CURRENT_REVISION`；首次發布以 `none` 代表尚無目前版本。這些命令皆需 `--remote` 與個人憑證。`deploy` 是相同兩步的組合操作。所有資料的更新由使用者主動操作，教師介面不做自動輪詢。

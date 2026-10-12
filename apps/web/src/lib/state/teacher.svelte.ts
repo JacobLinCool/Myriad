@@ -4,6 +4,7 @@ import {
   collectExport,
   downloadJSON,
   type TeacherExam,
+  type ManagementAccess,
   type Analysis,
   type Reports,
   type ExamDetail,
@@ -14,6 +15,7 @@ export function createTeacherSession(
   request: typeof api = api,
   download = downloadJSON,
 ) {
+  let access = $state<ManagementAccess | null>(null);
   let credential = $state(""),
     loggedIn = $state(false),
     checked = $state(false),
@@ -35,6 +37,18 @@ export function createTeacherSession(
     authenticating = true;
     error = "";
     try {
+      const permissions = await request<ManagementAccess>(
+        "/api/teacher/access",
+        "GET",
+        undefined,
+        operation,
+      );
+      if (!operation.current()) return;
+      access = permissions;
+      if (!permissions.account) {
+        loggedIn = false;
+        return;
+      }
       const rows = await request<TeacherExam[]>(
         "/api/teacher/exams",
         "GET",
@@ -70,6 +84,14 @@ export function createTeacherSession(
       });
       if (!operation.current()) return;
       credential = "";
+      const permissions = await request<ManagementAccess>(
+        "/api/teacher/access",
+        "GET",
+        undefined,
+        operation,
+      );
+      if (!operation.current()) return;
+      access = permissions;
       const rows = await request<TeacherExam[]>(
         "/api/teacher/exams",
         "GET",
@@ -162,6 +184,9 @@ export function createTeacherSession(
       await request("/api/teacher/session", "DELETE", undefined, operation);
       if (operation.current()) {
         loggedIn = false;
+        access = access
+          ? { ...access, account: null, isAdmin: false, canCreateExams: false }
+          : null;
         selected = "";
         analysis = null;
         reports = null;
@@ -200,6 +225,9 @@ export function createTeacherSession(
     exports.cancel();
   }
   return {
+    get access() {
+      return access;
+    },
     get credential() {
       return credential;
     },

@@ -8,12 +8,15 @@ export class Drafts {
   save(code: string) {
     if (this.key) this.storage.setItem(this.key, code);
   }
-  open(student: string, exam?: string, problem?: string) {
+  open(
+    student: string,
+    exam?: string,
+    problem?: string,
+    template = codeTemplate,
+  ) {
     this.key =
       student && exam && problem ? draftKey(student, exam, problem) : "";
-    return this.key
-      ? (this.storage.getItem(this.key) ?? codeTemplate)
-      : codeTemplate;
+    return this.key ? (this.storage.getItem(this.key) ?? template) : template;
   }
 }
 export function pendingKey(student: string, exam?: string) {

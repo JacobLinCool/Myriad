@@ -1,0 +1,48 @@
+{
+  "title": "2 Bonus：二進位亮點・最高亮點位置",
+  "order": 3,
+  "normalize": "trim",
+  "limits": {
+    "instructionBudget": 50000000,
+    "logicalTimeLimitMs": 2000,
+    "memoryMb": 128,
+    "outputLimitBytes": 65536
+  },
+  "template": "#include <stdio.h>\n\nint count_bits(unsigned int n) {\n    // TODO: 依題目要求完成\n    return 0;\n}\n\nint highest_bit(unsigned int n) {\n    // TODO: 依題目要求完成\n    return 0;\n}\n\nint main(void) {\n    // TODO: 讀取輸入、呼叫指定函式並輸出結果\n    return 0;\n}\n",
+  "semanticCheck": "必須定義 int count_bits(unsigned int n)，main 必須實際呼叫並輸出回傳值。count_bits 必須使用 & 以及右移 >>（包含 >>=）計算值為 1 的位元數，不得用字串轉換、以除法和取餘數取代位元運算，或使用 __builtin_popcount 等直接提供位元計數結果的內建函式。要求的運算必須參與結果計算，不接受無作用的裝飾程式碼。\n另須定義 int highest_bit(unsigned int n)，以右移找出最高有效 1 的位置（最低位為 0，n=0 回傳 -1），不得用對數或直接查詢最高位的內建函式；main 必須呼叫並在第二行輸出結果。",
+  "groups": [
+    {
+      "name": "全部測試",
+      "tests": [
+        "01.in",
+        "02.in",
+        "03.in",
+        "04.in",
+        "05.in",
+        "06.in",
+        "07.in",
+        "08.in",
+        "09.in",
+        "10.in",
+        "11.in",
+        "12.in",
+        "13.in",
+        "14.in",
+        "15.in",
+        "16.in",
+        "17.in",
+        "18.in"
+      ]
+    }
+  ],
+  "sampleCases": [
+    {
+      "input": "13\n",
+      "output": "3\n3\n"
+    },
+    {
+      "input": "0\n",
+      "output": "0\n-1\n"
+    }
+  ]
+}

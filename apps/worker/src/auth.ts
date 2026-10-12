@@ -1,3 +1,4 @@
+import { ensureAccount } from "./permissions.js";
 import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { sha256Hex } from "@myriad/shared";
@@ -96,7 +97,10 @@ auth.delete("/api/auth/session", async (c) => {
 auth.get("/api/auth/nycu/start", async (c) => {
   if (!configured(c)) fail("NYCU 登入尚未設定", 503);
   const returnTo = c.req.query("returnTo") ?? "/exams";
-  if (!/^\/exams(?:\/[A-Za-z0-9_-]+)*(?:\/)?$/.test(returnTo))
+  if (
+    returnTo !== "/teacher" &&
+    !/^\/exams(?:\/[A-Za-z0-9_-]+)*(?:\/)?$/.test(returnTo)
+  )
     fail("返回網址無效");
   // NYCU only returns to APP_ORIGIN, so another address (such as a different
   // local port) goes back to the page with an explanation instead of failing.
@@ -211,6 +215,8 @@ auth.get("/api/auth/nycu/callback", async (c) => {
       /[\x00-\x1f\x7f]/.test(profile.username)
     )
       return failed("profile");
+    await ensureAccount(c, { provider: "nycu", subject: profile.username });
+    deleteCookie(c, "myriad_teacher", { path: "/api" });
     const session = token(),
       old = getCookie(c, SESSION);
     const statements = [

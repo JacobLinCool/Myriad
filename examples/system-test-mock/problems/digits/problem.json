@@ -1,0 +1,48 @@
+{
+  "title": "3：數字縮合",
+  "order": 4,
+  "normalize": "trim",
+  "limits": {
+    "instructionBudget": 50000000,
+    "logicalTimeLimitMs": 2000,
+    "memoryMb": 128,
+    "outputLimitBytes": 65536
+  },
+  "template": "#include <stdio.h>\n\nint sum_digits(unsigned int n) {\n    // TODO: 依題目要求完成\n    return 0;\n}\n\nint main(void) {\n    // TODO: 讀取輸入、呼叫指定函式並輸出結果\n    return 0;\n}\n",
+  "semanticCheck": "必須定義 int sum_digits(unsigned int n)，main 必須實際呼叫並輸出回傳值。sum_digits 必須透過對尚未處理的高位數字呼叫自身，以遞迴計算十進位數字總和。不得用迴圈、字串轉換或委派給使用迴圈的輔助函式處理數字。遞迴必須實際參與回傳結果，不能是未使用或無作用的程式碼。",
+  "groups": [
+    {
+      "name": "全部測試",
+      "tests": [
+        "01.in",
+        "02.in",
+        "03.in",
+        "04.in",
+        "05.in",
+        "06.in",
+        "07.in",
+        "08.in",
+        "09.in",
+        "10.in",
+        "11.in",
+        "12.in",
+        "13.in",
+        "14.in",
+        "15.in",
+        "16.in",
+        "17.in",
+        "18.in"
+      ]
+    }
+  ],
+  "sampleCases": [
+    {
+      "input": "5072\n",
+      "output": "14\n"
+    },
+    {
+      "input": "0\n",
+      "output": "0\n"
+    }
+  ]
+}

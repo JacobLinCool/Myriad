@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   DeviceIdSchema,
   ProblemPublicSchema,
+  ProblemDefinitionSchema,
   TestClaimSchema,
   TOOLCHAIN,
   TestVerdictSchema,
@@ -30,7 +31,7 @@ export const BundleContentSchema = z
     exam: ExamSettingsSchema,
     problems: z
       .array(
-        ProblemPublicSchema.extend({
+        ProblemDefinitionSchema.extend({
           id: SlugSchema,
           version: DigestSchema,
           testCount: z.number().int().min(1).max(1000),
@@ -141,11 +142,15 @@ export function problemVersion(
     normalize: "trim" | "exact";
     groups: { tests: number[] }[];
     testCount: number;
+    semanticCheck?: string;
   },
   tests: { index: number; sha256: string; expectedDigest: string }[],
 ): Promise<string> {
   return sha256Hex(
     canonicalJson({
+      ...(problem.semanticCheck
+        ? { semanticCheck: problem.semanticCheck }
+        : {}),
       toolchain: `${TOOLCHAIN.id}@${TOOLCHAIN.version}`,
       limits: problem.limits,
       normalize: problem.normalize,
@@ -208,7 +213,18 @@ export interface PublicExam {
   /** Present when the exam's teacher is previewing it outside its schedule. */
   preview?: true;
 }
+export interface SemanticCheckResult {
+  passed: boolean;
+  reason: string;
+  model: string;
+  effort: "low";
+  checkedAt: number;
+  reviewedCharacters: number;
+  truncated: boolean;
+}
 export interface AttemptSummary {
+  semanticCheck?: SemanticCheckResult;
+  testScore?: number;
   id: string;
   examId: string;
   /** The upload the attempt was judged against. */

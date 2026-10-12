@@ -1,3 +1,4 @@
+import { ensureSemantic } from "./semantic.js";
 import { Hono } from "hono";
 import {
   AttemptRequestSchema,
@@ -7,6 +8,8 @@ import {
   boundChecksum,
   computeGroupVerdicts,
   type AttemptSummary,
+  type BundleContent,
+  type SemanticCheckResult,
   type TestClaim,
   type TestVerdict,
 } from "@myriad/shared";
@@ -51,6 +54,9 @@ export async function purgePreview(db: D1Database, e: ExamRow) {
     "SELECT id FROM attempts WHERE exam_id=? AND preview=1 AND created_at<?";
   await db.batch([
     db
+      .prepare(`DELETE FROM semantic_checks WHERE attempt_id IN (${stale})`)
+      .bind(e.id, e.starts_at),
+    db
       .prepare(`DELETE FROM attempt_claims WHERE attempt_id IN (${stale})`)
       .bind(e.id, e.starts_at),
     db
@@ -69,6 +75,15 @@ export async function getAttempt(c: AppContext): Promise<AttemptRow> {
   if (!a) fail("Attempt not found", 404);
   await requireParticipant(c, a.identity_kind, a.student_id);
   if (a.status === "running" && Date.now() >= a.expires_at) {
+    const m = await revisionManifest(c.env.DB, a.exam_id, a.revision);
+    const p = m.problems.find((p) => p.id === a.problem_id)!;
+    const received = await c.env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM attempt_claims WHERE attempt_id=?",
+    )
+      .bind(a.id)
+      .first<{ count: number }>();
+    // Timely persisted tests remain eligible while server-side grading finishes.
+    if (p.semanticCheck && received?.count === p.testCount) return a;
     await c.env.DB.prepare(
       "UPDATE attempts SET status='expired' WHERE id=? AND status='running' AND expires_at<=?",
     )
@@ -117,6 +132,69 @@ export function summaryOf(
     score: 0,
     ...(a.result ? JSON.parse(a.result) : {}),
   };
+}
+type GradingProblem = BundleContent["problems"][number];
+/** Both producers persist first and then try this same atomic finalization. */
+async function finalizeAttempt(
+  env: Env,
+  a: AttemptRow,
+  p: GradingProblem,
+): Promise<AttemptRow> {
+  if (a.status !== "running") return a;
+  const saved = await summary(env.DB, a);
+  if (saved.verdicts.length !== p.testCount) return a;
+  let semanticCheck: SemanticCheckResult | undefined;
+  if (p.semanticCheck) {
+    const row = await env.DB.prepare(
+      "SELECT result FROM semantic_checks WHERE attempt_id=?",
+    )
+      .bind(a.id)
+      .first<{ result: string | null }>();
+    if (!row?.result) return a;
+    semanticCheck = JSON.parse(row.result);
+  }
+  const tests = computeGroupVerdicts(p.groups, saved.verdicts);
+  const result = {
+    ...tests,
+    ...(semanticCheck
+      ? {
+          semanticCheck,
+          testScore: tests.score,
+          score: semanticCheck.passed ? tests.score : 0,
+        }
+      : {}),
+  };
+  const updated = await env.DB.prepare(
+    "UPDATE attempts SET status='complete',completed_at=?,result=? WHERE id=? AND status='running' AND (expires_at>? OR ?=1) AND (SELECT COUNT(*) FROM attempt_claims WHERE attempt_id=?)=? RETURNING *",
+  )
+    .bind(
+      Date.now(),
+      JSON.stringify(result),
+      a.id,
+      Date.now(),
+      p.semanticCheck ? 1 : 0,
+      a.id,
+      p.testCount,
+    )
+    .first<AttemptRow>();
+  return (
+    updated ??
+    (await env.DB.prepare("SELECT * FROM attempts WHERE id=?")
+      .bind(a.id)
+      .first<AttemptRow>())!
+  );
+}
+function startSemantic(c: AppContext, a: AttemptRow, p: GradingProblem) {
+  if (!p.semanticCheck || a.status !== "running") return;
+  c.executionCtx.waitUntil(
+    ensureSemantic(c.env, a.id, p.semanticCheck, a.code)
+      .then(async (result) => {
+        if (result) await finalizeAttempt(c.env, a, p);
+      })
+      .catch(() => {
+        console.error("Background submission grading unavailable", a.id);
+      }),
+  );
 }
 export const attempts = new Hono<{ Bindings: Env }>();
 attempts.use("/api/exams/:eid/attempts/*", async (c, next) => {
@@ -197,8 +275,10 @@ attempts.post("/api/exams/:eid/attempts", async (c) => {
     ),
   ]);
   const created = inserted.results[0];
-  if (created)
+  if (created) {
+    startSemantic(c, created, problem);
     return c.json({ attempt: summaryOf(created, []), token: credential }, 201);
+  }
   // Not inserted: the cooldown held, or a concurrent retry created it first.
   const raced = await c.env.DB.prepare("SELECT * FROM attempts WHERE id=?")
     .bind(req.operationId)
@@ -263,7 +343,11 @@ attempts.get("/api/exams/:eid/attempts/:aid/ws", async (c) => {
         claim: row.claim,
         verdict: JSON.parse(row.verdict),
       });
-    if (a.status === "running" && Date.now() >= a.expires_at) {
+    if (
+      a.status === "running" &&
+      Date.now() >= a.expires_at &&
+      !(p.semanticCheck && claims.size === p.testCount)
+    ) {
       await c.env.DB.prepare(
         "UPDATE attempts SET status='expired' WHERE id=? AND status='running' AND expires_at<=?",
       )
@@ -272,131 +356,173 @@ attempts.get("/api/exams/:eid/attempts/:aid/ws", async (c) => {
       a = { ...a, status: "expired" };
     }
   }
-  /** Completes the attempt once every test has a verdict. */
+  let semanticError: Error | undefined;
+  let observingSemantic = false;
   async function complete() {
     if (a.status !== "running" || claims.size !== p.testCount) return;
-    const result = computeGroupVerdicts(p.groups, current().verdicts);
-    const updated = await c.env.DB.prepare(
-      "UPDATE attempts SET status='complete',completed_at=?,result=? WHERE id=? AND status='running' AND expires_at>? AND (SELECT COUNT(*) FROM attempt_claims WHERE attempt_id=?)=? RETURNING *",
-    )
-      .bind(
-        Date.now(),
-        JSON.stringify(result),
-        a.id,
-        Date.now(),
-        a.id,
-        p.testCount,
-      )
-      .first<AttemptRow>();
-    if (updated) a = updated;
-    else await load();
+    a = await finalizeAttempt(c.env, a, p);
+    if (a.status === "running" && p.semanticCheck) {
+      if (semanticError) throw semanticError;
+      send({ type: "semantic", status: "running" });
+    }
+  }
+  // The POST may run in another isolate. Observe its persisted lease without
+  // blocking this socket's serialized claim writes; reconnect can recover a stale lease.
+  function observeSemantic() {
+    if (!p.semanticCheck || observingSemantic || a.status !== "running") return;
+    observingSemantic = true;
+    const instruction = p.semanticCheck;
+    c.executionCtx.waitUntil(
+      (async () => {
+        try {
+          const deadline = Date.now() + 35000;
+          while (server.readyState === WebSocket.OPEN) {
+            const result = await ensureSemantic(
+              c.env,
+              a.id,
+              instruction,
+              a.code,
+            );
+            if (result) {
+              await enqueue(async () => {
+                await load();
+                await complete();
+                if (a.status !== "running")
+                  send({ type: "state", attempt: current() });
+              });
+              return;
+            }
+            if (Date.now() >= deadline)
+              throw new Error(
+                "語意檢查尚未完成，請稍後查詢並繼續提交；測資結果已保存。",
+              );
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
+        } catch (error) {
+          await enqueue(async () => {
+            semanticError =
+              error instanceof Error
+                ? error
+                : new Error("語意檢查暫時無法完成");
+            await load();
+            await complete();
+          });
+        }
+      })(),
+    );
   }
   let queue = Promise.resolve();
   server.addEventListener("close", () => {
     clearTimeout(authTimer);
     server.close(1000, "Closed");
   });
+  function enqueue(work: () => Promise<void>) {
+    queue = queue.then(work).catch((error: unknown) => {
+      send({
+        type: "error",
+        error: error instanceof Error ? error.message : "Invalid request",
+      });
+      server.close(1008, "Invalid request");
+    });
+    c.executionCtx.waitUntil(queue);
+    return queue;
+  }
   server.addEventListener("message", (event) => {
-    queue = queue
-      .then(async () => {
-        if (typeof event.data !== "string" || event.data.length > 2048)
-          fail("Invalid message");
-        const msg = ClaimMessageSchema.parse(JSON.parse(event.data));
-        if (msg.type === "auth") {
-          if ((await sha256Hex(msg.token)) !== a.token_hash)
-            fail("Invalid attempt credential", 401);
-          authenticated = true;
-          clearTimeout(authTimer);
-          await load();
-          await complete();
-          if (a.status !== "running") {
-            send({ type: "state", attempt: current() });
-            return;
-          }
-          send({ type: "ready", salt: m.exam.salt, attempt: current() });
-          return;
-        }
-        if (!authenticated) fail("Authenticate first", 401);
-        if (a.status === "running" && Date.now() >= a.expires_at) await load();
+    void enqueue(async () => {
+      if (typeof event.data !== "string" || event.data.length > 2048)
+        fail("Invalid message");
+      const msg = ClaimMessageSchema.parse(JSON.parse(event.data));
+      if (msg.type === "auth") {
+        if ((await sha256Hex(msg.token)) !== a.token_hash)
+          fail("Invalid attempt credential", 401);
+        authenticated = true;
+        clearTimeout(authTimer);
+        await load();
+        await complete();
         if (a.status !== "running") {
           send({ type: "state", attempt: current() });
           return;
         }
-        if (msg.type === "abort") {
-          const updated = await c.env.DB.prepare(
-            "UPDATE attempts SET status='failed' WHERE id=? AND status='running' RETURNING *",
+        send({ type: "ready", salt: m.exam.salt, attempt: current() });
+        observeSemantic();
+        return;
+      }
+      if (!authenticated) fail("Authenticate first", 401);
+      if (a.status === "running" && Date.now() >= a.expires_at) await load();
+      if (a.status !== "running") {
+        send({ type: "state", attempt: current() });
+        return;
+      }
+      if (msg.type === "abort") {
+        const updated = await c.env.DB.prepare(
+          "UPDATE attempts SET status='failed' WHERE id=? AND status='running' RETURNING *",
+        )
+          .bind(a.id)
+          .first<AttemptRow>();
+        if (updated) a = updated;
+        else await load();
+        send({ type: "state", attempt: current() });
+        return;
+      }
+      if (msg.type === "claim") {
+        const claim: TestClaim = msg.claim;
+        if (claim.index >= p.testCount) fail("Test index out of range");
+        const serialized = canonicalJson(claim);
+        let status: TestVerdict["status"];
+        if (claim.status === "ok") {
+          const digest = m.inputs.find(
+            (i) => i.problemId === p.id && i.index === claim.index,
+          )!.expectedDigest;
+          const expected = await boundChecksum({
+            salt: m.exam.salt,
+            studentId: a.student_id,
+            problemId: p.id,
+            index: claim.index,
+            innerDigest: digest,
+          });
+          status = claim.checksum.toLowerCase() === expected ? "AC" : "WA";
+        } else
+          status = ({ tle: "TLE", mle: "MLE", re: "RE", ole: "OLE" } as const)[
+            claim.status
+          ];
+        const verdict: TestVerdict = {
+          index: claim.index,
+          status,
+          ...(claim.metrics ? { metrics: claim.metrics } : {}),
+        };
+        if (!claims.has(claim.index)) {
+          const inserted = await c.env.DB.prepare(
+            `INSERT INTO attempt_claims SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM attempts WHERE id=? AND status='running' AND expires_at>?) ON CONFLICT(attempt_id,idx) DO NOTHING RETURNING idx`,
           )
-            .bind(a.id)
-            .first<AttemptRow>();
-          if (updated) a = updated;
+            .bind(
+              a.id,
+              claim.index,
+              serialized,
+              JSON.stringify(verdict),
+              a.id,
+              Date.now(),
+            )
+            .first();
+          if (inserted) claims.set(claim.index, { claim: serialized, verdict });
+          // Claimed by another connection, or the attempt stopped running.
           else await load();
+        }
+        const stored = claims.get(claim.index);
+        if (stored && stored.claim !== serialized)
+          fail("Conflicting duplicate claim", 409);
+        if (stored) send({ type: "verdict", verdict: stored.verdict });
+        if (a.status !== "running") {
           send({ type: "state", attempt: current() });
           return;
         }
-        if (msg.type === "claim") {
-          const claim: TestClaim = msg.claim;
-          if (claim.index >= p.testCount) fail("Test index out of range");
-          const serialized = canonicalJson(claim);
-          let status: TestVerdict["status"];
-          if (claim.status === "ok") {
-            const digest = m.inputs.find(
-              (i) => i.problemId === p.id && i.index === claim.index,
-            )!.expectedDigest;
-            const expected = await boundChecksum({
-              salt: m.exam.salt,
-              studentId: a.student_id,
-              problemId: p.id,
-              index: claim.index,
-              innerDigest: digest,
-            });
-            status = claim.checksum.toLowerCase() === expected ? "AC" : "WA";
-          } else
-            status = (
-              { tle: "TLE", mle: "MLE", re: "RE", ole: "OLE" } as const
-            )[claim.status];
-          const verdict = { index: claim.index, status };
-          if (!claims.has(claim.index)) {
-            const inserted = await c.env.DB.prepare(
-              `INSERT INTO attempt_claims SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM attempts WHERE id=? AND status='running' AND expires_at>?) ON CONFLICT(attempt_id,idx) DO NOTHING RETURNING idx`,
-            )
-              .bind(
-                a.id,
-                claim.index,
-                serialized,
-                JSON.stringify(verdict),
-                a.id,
-                Date.now(),
-              )
-              .first();
-            if (inserted)
-              claims.set(claim.index, { claim: serialized, verdict });
-            // Claimed by another connection, or the attempt stopped running.
-            else await load();
-          }
-          const stored = claims.get(claim.index);
-          if (stored && stored.claim !== serialized)
-            fail("Conflicting duplicate claim", 409);
-          if (stored) send({ type: "verdict", verdict: stored.verdict });
-          if (a.status !== "running") {
-            send({ type: "state", attempt: current() });
-            return;
-          }
-        }
-        // "finish" may follow claims written by an earlier connection.
-        if (msg.type === "finish" && claims.size !== p.testCount) await load();
-        const before = a.status;
-        await complete();
-        if (msg.type === "finish" || a.status !== before)
-          send({ type: "state", attempt: current() });
-      })
-      .catch((error: unknown) => {
-        send({
-          type: "error",
-          error: error instanceof Error ? error.message : "Invalid request",
-        });
-        server.close(1008, "Invalid request");
-      });
-    c.executionCtx.waitUntil(queue);
+      }
+      // "finish" may follow claims written by an earlier connection.
+      if (msg.type === "finish" && claims.size !== p.testCount) await load();
+      const before = a.status;
+      await complete();
+      if (msg.type === "finish" || a.status !== before)
+        send({ type: "state", attempt: current() });
+    });
   });
   return new Response(null, { status: 101, webSocket: client });
 });

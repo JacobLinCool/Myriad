@@ -181,6 +181,7 @@ export class StudentSession {
       this.student ? this.participantId : "",
       this.exam?.id,
       this.problem?.id,
+      this.problem?.template,
     );
     this.draftStatus = this.student ? "saved" : "anonymous";
     this.pending = !!localStorage.getItem(this.pendingKey());

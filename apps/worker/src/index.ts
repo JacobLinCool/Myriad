@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { bodyLimit } from "hono/body-limit";
 import { ZodError } from "zod";
-import { TelemetryBatchSchema } from "@myriad/shared";
+import { TelemetryBatchSchema, ProblemPublicSchema } from "@myriad/shared";
 import {
   exam,
   examOpen,
@@ -17,6 +17,7 @@ import {
 } from "./core.js";
 import { attempts, summary, type AttemptRow } from "./attempts.js";
 import { auth, requireParticipant, studentAccount } from "./auth.js";
+import { management } from "./management.js";
 import { teachers } from "./teacher.js";
 export type { Env } from "./core.js";
 const app = new Hono<{ Bindings: Env }>();
@@ -59,7 +60,9 @@ function publicExam(e: ExamRow, preview = false) {
     revision: e.revision,
     status,
     serverTime: now,
-    problems: visible ? m.problems : [],
+    problems: visible
+      ? m.problems.map((p) => ProblemPublicSchema.parse(p))
+      : [],
     ...(preview ? { preview: true } : {}),
   };
 }
@@ -106,7 +109,14 @@ app.get("/api/exams/:eid/submissions", async (c) => {
   if (kind !== "guest" && kind !== "nycu") fail("Identity kind required");
   const participant = await requireParticipant(c, kind, student);
   await c.env.DB.prepare(
-    "UPDATE attempts SET status='expired' WHERE exam_id=? AND status='running' AND expires_at<=?",
+    `UPDATE attempts SET status='expired' WHERE exam_id=? AND status='running' AND expires_at<=?
+       AND NOT EXISTS (
+         SELECT 1 FROM exam_revisions r, json_each(r.manifest,'$.problems') p
+         WHERE r.exam_id=attempts.exam_id AND r.revision=attempts.revision
+           AND json_extract(p.value,'$.id')=attempts.problem_id
+           AND json_extract(p.value,'$.semanticCheck') IS NOT NULL
+           AND json_extract(p.value,'$.testCount')=(SELECT COUNT(*) FROM attempt_claims WHERE attempt_id=attempts.id)
+       )`,
   )
     .bind(e.id, Date.now())
     .run();
@@ -161,6 +171,7 @@ app.post("/api/telemetry", bodyLimit({ maxSize: 32768 }), async (c) => {
 app.route("/", auth);
 app.route("/", attempts);
 app.route("/", teachers);
+app.route("/", management);
 app.get("/toolchains/*", async (c) => {
   return (await immutableObject(c, c.req.path.slice(1))) ?? c.notFound();
 });

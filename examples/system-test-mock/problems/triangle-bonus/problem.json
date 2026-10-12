@@ -1,0 +1,48 @@
+{
+  "title": "1 Bonus：三角形分類器・周長資訊",
+  "order": 1,
+  "normalize": "trim",
+  "limits": {
+    "instructionBudget": 50000000,
+    "logicalTimeLimitMs": 2000,
+    "memoryMb": 128,
+    "outputLimitBytes": 65536
+  },
+  "template": "#include <stdio.h>\n\nint classify_triangle(int a, int b, int c) {\n    // TODO: 依題目要求完成\n    return 0;\n}\n\nint triangle_perimeter(int a, int b, int c) {\n    // TODO: 依題目要求完成\n    return 0;\n}\n\nint main(void) {\n    // TODO: 讀取輸入、呼叫指定函式並輸出結果\n    return 0;\n}\n",
+  "semanticCheck": "必須定義 int classify_triangle(int a,int b,int c)，在此函式內判斷三角形有效性及類型，回傳 0=無效、3=等邊、2=恰兩邊相等、1=三邊皆異。main 必須實際呼叫此函式並使用回傳值決定輸出；不得只宣告函式卻將分類工作全部放在 main。\n另須定義 int triangle_perimeter(int a,int b,int c)，其內必須實際呼叫 classify_triangle 判斷有效性，再回傳周長或 0；main 必須呼叫並在第二行輸出結果。",
+  "groups": [
+    {
+      "name": "全部測試",
+      "tests": [
+        "01.in",
+        "02.in",
+        "03.in",
+        "04.in",
+        "05.in",
+        "06.in",
+        "07.in",
+        "08.in",
+        "09.in",
+        "10.in",
+        "11.in",
+        "12.in",
+        "13.in",
+        "14.in",
+        "15.in",
+        "16.in",
+        "17.in",
+        "18.in"
+      ]
+    }
+  ],
+  "sampleCases": [
+    {
+      "input": "5 5 8\n",
+      "output": "ISOSCELES\n18\n"
+    },
+    {
+      "input": "2 3 5\n",
+      "output": "INVALID\n0\n"
+    }
+  ]
+}

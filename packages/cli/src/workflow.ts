@@ -5,7 +5,7 @@ import { z } from "zod";
 import { descriptor } from "@wasm-oj/toolchain-clang";
 import {
   ExamSettingsSchema,
-  ProblemPublicSchema,
+  ProblemDefinitionSchema,
   BundleContentSchema,
   canonicalJson,
   sha256Hex,
@@ -54,7 +54,9 @@ export async function request(
 }
 export async function readBundle(dir: string) {
   return validateBundle(
-    JSON.parse(await fs.readFile(path.join(dir, ".myriad/bundle.json"), "utf8")),
+    JSON.parse(
+      await fs.readFile(path.join(dir, ".myriad/bundle.json"), "utf8"),
+    ),
   );
 }
 async function save(file: string, value: unknown) {
@@ -160,7 +162,7 @@ export async function build(dir: string) {
       .min(1)
       .parse(meta.groups);
     const files = [...new Set(rawGroups.flatMap((g) => g.tests))];
-    const problem = ProblemPublicSchema.parse({
+    const problem = ProblemDefinitionSchema.parse({
       ...meta,
       id: entry.name,
       statementMd: await fs.readFile(path.join(root, "statement.md"), "utf8"),
@@ -223,7 +225,10 @@ export async function build(dir: string) {
       revision: await sha256Hex(canonicalJson(parsed)),
       content: parsed,
     };
-  await save(path.join(dir, ".myriad/bundles", `${bundle.revision}.json`), bundle);
+  await save(
+    path.join(dir, ".myriad/bundles", `${bundle.revision}.json`),
+    bundle,
+  );
   await save(path.join(dir, ".myriad/bundle.json"), bundle);
   return {
     revision: bundle.revision,
@@ -233,6 +238,16 @@ export async function build(dir: string) {
 }
 const METADATA = ["title", "startsAt", "endsAt", "rules", "policy"] as const;
 type Metadata = Pick<BundleContent["exam"], (typeof METADATA)[number]>;
+/** Uploads an immutable revision without publishing it. */
+export async function stage(dir: string, options: RemoteOptions) {
+  const b = await readBundle(dir);
+  return request(
+    options,
+    `/api/teacher/exams/${b.content.exam.id}/revisions`,
+    "POST",
+    b,
+  );
+}
 /**
  * Uploads the bundle and makes it current, at any time. The local exam.json
  * replaces the exam settings on the site, so settings edited on the site are
@@ -241,7 +256,7 @@ type Metadata = Pick<BundleContent["exam"], (typeof METADATA)[number]>;
 export async function deploy(dir: string, options: RemoteOptions) {
   const b = await readBundle(dir),
     base = `/api/teacher/exams/${b.content.exam.id}/revisions`;
-  await request(options, base, "POST", b);
+  const staged = await request(options, base, "POST", b);
   const result: {
     examId: string;
     revision: string;
@@ -250,7 +265,9 @@ export async function deploy(dir: string, options: RemoteOptions) {
       metadata: Metadata;
       problems: { id: string; version: string | null }[];
     } | null;
-  } = await request(options, `${base}/${b.revision}/publish`, "POST");
+  } = await request(options, `${base}/${b.revision}/publish`, "POST", {
+    expectedRevision: staged.currentRevision,
+  });
   const url = new URL(result.url, options.remote);
   // Opening this while signed in to the teacher workspace previews the exam as a student.
   const previewUrl = new URL(url);
@@ -308,7 +325,8 @@ export async function exportExam(
       `/api/teacher/exams/${encodeURIComponent(options.exam)}/export`,
     );
   else throw new Error("Provide --file, or --exam with --remote");
-  if (data.format !== "myriad-export-v1") throw new Error("Unknown export format");
+  if (data.format !== "myriad-export-v1")
+    throw new Error("Unknown export format");
   const bundles = await Promise.all(data.bundles.map((b) => validateBundle(b)));
   const current = bundles.find((b) => b.revision === data.current);
   if (!current) throw new Error("Export does not contain the current upload");
@@ -353,6 +371,8 @@ export async function exportExam(
             tests: g.tests.map(name),
           })),
           sampleCases: p.sampleCases,
+          template: p.template,
+          semanticCheck: p.semanticCheck,
         },
         null,
         2,
@@ -533,10 +553,13 @@ export async function verify(dir: string) {
           disputed = true;
       }
     }
+    if (problem?.semanticCheck && !s.semanticCheck)
+      throw new Error(`Missing semantic verdict for submission ${s.id}`);
+    const verifiedScore = s.semanticCheck?.passed === false ? 0 : result.score;
     const classification =
-      disputed || result.score < s.score
+      disputed || verifiedScore < s.score
         ? "DISPUTED"
-        : result.score > s.score
+        : verifiedScore > s.score
           ? "UNDER-CLAIMED"
           : "CONFIRMED";
     submissions.push({
@@ -581,13 +604,13 @@ export async function pushToolchain(options: RemoteOptions) {
   );
   const credential = options.tokenFile
     ? (await fs.readFile(options.tokenFile, "utf8")).trim()
-    : process.env.MYRIAD_TEACHER_TOKEN;
-  if (!credential) throw new Error("Teacher token required");
+    : process.env.MYRIAD_ADMIN_TOKEN;
+  if (!credential) throw new Error("Platform administrator token required");
   for (const asset of descriptor.assets) {
     const filename = path.basename(asset.path),
       data = await fs.readFile(path.join(base, "assets", filename));
     const res = await fetch(
-      new URL(`/api/teacher/toolchains/${filename}`, options.remote),
+      new URL(`/api/admin/toolchains/${filename}`, options.remote),
       {
         method: "PUT",
         headers: {

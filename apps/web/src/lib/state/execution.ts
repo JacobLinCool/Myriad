@@ -1,8 +1,4 @@
-import type {
-  PublicExam,
-  ProblemPublic,
-  AttemptSummary,
-} from "@myriad/shared";
+import type { PublicExam, ProblemPublic, AttemptSummary } from "@myriad/shared";
 import { getDeviceId } from "../device";
 import { SubmissionRejected } from "../api";
 import { createRecorder, type Recorder } from "../telemetry";
@@ -271,6 +267,9 @@ export async function submit(
       preview,
       onProgress: (i, n) => {
         if (visible()) session.progress = `執行測試 ${i} / ${n}`;
+      },
+      onSemantic: () => {
+        if (visible()) session.progress = "測資已保存，正在檢查實作要求…";
       },
       onVerdict: (v) => {
         if (!visible()) return;

@@ -80,48 +80,93 @@ remote(program.command("toolchain").command("push")).action(
 );
 const results = program.command("results");
 remote(results.command("upload <dir>")).action(action(workflow.uploadResults));
-const teachers = program.command("teachers");
-remote(teachers.command("create").requiredOption("--name <name>")).action(
+const permissions = program.command("permissions");
+remote(permissions.command("list")).action(
   action((o) =>
-    workflow.request(o, "/api/admin/teachers", "POST", { name: o.name }, true),
+    workflow.request(o, "/api/admin/creation-grants", "GET", undefined, true),
   ),
 );
-remote(teachers.command("revoke <id>")).action(
-  action((id, o) =>
-    workflow.request(o, `/api/admin/teachers/${id}`, "DELETE", undefined, true),
-  ),
-);
-const legacy = program.command("legacy");
-remote(legacy.command("list")).action(
+remote(
+  permissions
+    .command("grant")
+    .requiredOption("--provider <provider>")
+    .requiredOption("--subject <subject>"),
+).action(
   action((o) =>
-    workflow.request(o, "/api/admin/legacy", "GET", undefined, true),
-  ),
-);
-remote(legacy.command("assign <exam>").requiredOption("--teacher <id>")).action(
-  action((eid, o) =>
     workflow.request(
       o,
-      `/api/admin/legacy/${eid}/owner`,
+      "/api/admin/creation-grants",
       "POST",
-      { teacherId: o.teacher },
+      { provider: o.provider, subject: o.subject },
       true,
     ),
   ),
 );
-remote(legacy.command("export <exam>")).action(
-  action(async (eid, o) => {
-    let after = 0;
-    const submissions = [];
-    for (;;) {
-      const p = await workflow.request(
-        o,
-        `/api/teacher/legacy/${eid}?after=${after}`,
-      );
-      submissions.push(...p.submissions);
-      if (!p.hasMore) break;
-      after = p.nextCursor;
-    }
-    return { submissions };
-  }),
+remote(permissions.command("revoke <account>")).action(
+  action((id, o) =>
+    workflow.request(
+      o,
+      `/api/admin/creation-grants/${encodeURIComponent(id)}`,
+      "DELETE",
+      undefined,
+      true,
+    ),
+  ),
+);
+const members = program.command("members");
+remote(members.command("list").requiredOption("--exam <id>")).action(
+  action((o) =>
+    workflow.request(
+      o,
+      `/api/teacher/exams/${encodeURIComponent(o.exam)}/members`,
+    ),
+  ),
+);
+remote(
+  members
+    .command("invite")
+    .requiredOption("--exam <id>")
+    .requiredOption("--provider <provider>")
+    .requiredOption("--subject <subject>"),
+).action(
+  action((o) =>
+    workflow.request(
+      o,
+      `/api/teacher/exams/${encodeURIComponent(o.exam)}/members`,
+      "POST",
+      { provider: o.provider, subject: o.subject },
+    ),
+  ),
+);
+remote(
+  members.command("remove <account>").requiredOption("--exam <id>"),
+).action(
+  action((id, o) =>
+    workflow.request(
+      o,
+      `/api/teacher/exams/${encodeURIComponent(o.exam)}/members/${encodeURIComponent(id)}`,
+      "DELETE",
+    ),
+  ),
+);
+remote(program.command("stage <dir>")).action(action(workflow.stage));
+remote(
+  program
+    .command("publish")
+    .requiredOption("--exam <id>")
+    .requiredOption("--revision <digest>")
+    .requiredOption("--expected-revision <digest-or-none>"),
+).action(
+  action((o) =>
+    workflow.request(
+      o,
+      `/api/teacher/exams/${encodeURIComponent(o.exam)}/revisions/${encodeURIComponent(o.revision)}/publish`,
+      "POST",
+      {
+        expectedRevision:
+          o.expectedRevision === "none" ? null : o.expectedRevision,
+      },
+    ),
+  ),
 );
 export { program };

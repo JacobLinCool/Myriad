@@ -39,7 +39,7 @@ pnpm test
 pnpm --filter=@myriad/worker exec wrangler deploy
 ```
 
-既有環境沿用既有 `ADMIN_TOKEN`、`ATTEMPT_SECRET`，新增 OAuth secret 即可。`ATTEMPT_SECRET` 至少 32 字元，考試期間保持穩定。新建環境依教師操作手冊核發教師 token、上傳工具鏈與已驗證考試 bundle。
+既有環境沿用既有 `ADMIN_TOKEN`、`ATTEMPT_SECRET`，新增 OAuth secret 即可。`ATTEMPT_SECRET` 至少 32 字元，考試期間保持穩定。新建環境依教師操作手冊設定 `ADMIN_IDENTITIES`、授予建立考試許可，並由登入者建立個人 CLI 憑證；平台管理員上傳工具鏈，考試擁有者上傳已驗證的考試 bundle。
 
 Wrangler 本機使用 `local` 環境，讓請求保留本機網址。`pnpm dev:worker` 讀取 `.dev.vars` 的 `APP_ORIGIN`，自動以相同連接埠啟動；`pnpm dev:web` 的 API proxy 也指向這個網址。改用其他連接埠時只需修改 `APP_ORIGIN`，並把對應 callback 加入校方 Redirect uris。從其他網址（例如 `127.0.0.1` 或另一個連接埠）按下 NYCU 登入，會回到原頁面並提示應使用的網址，不會開始授權流程。
 
@@ -51,6 +51,13 @@ Wrangler 本機使用 `local` 環境，讓請求保留本機網址。`pnpm dev:w
 - Authorization code 流程使用一次性 state 與 S256 PKCE；callback 消耗 state 後才建立 session。異常或取消時回到原考試頁面，提供重新登入與訪客作答。
 - 訪客與 NYCU 使用分開的 participant ID。即使顯示文字相同，提交冷卻、摘要、草稿、編輯器復原紀錄及教師分數皆分開。教師可看到登入方式與裝置關聯。
 - `0006_student_auth.sql` 將既有自行填寫身分標記為訪客，並保留提交。
-- 教師管理權限使用個別教師 token。學生 NYCU 登入建立學生 session。
+- 同一個 NYCU session 可進入教師工作台；是否可建立考試、管理特定考試或管理全域許可，由各自的權限判定。個人 CLI token 沿用相同帳號權限。
 
 自動測試使用真實本機 Worker／D1 與隔離的校方 OAuth 回應，涵蓋 state、回呼重放、取消、逾期、跨站登出與身分隔離。正式上線驗收需由持有 NYCU 帳號的人完成一次校方登入，確認帳號顯示、返回原題目、重新整理保留身分、訪客切換及考試提交。
+
+
+## 全域管理員
+
+在 Worker 設定 `ADMIN_IDENTITIES` 為 JSON 字串，例如 `[{"provider":"nycu","subject":"admin-username"}]`（本機放 `.dev.vars`，正式環境使用 Worker 變數或 secret）。此設定比對驗證完成的 OAuth 帳號，並非從 NYCU profile 推測管理角色。未設定時不會有 OAuth 全域管理員，平台 `ADMIN_TOKEN` 仍可用於初始化。不要將 `ADMIN_TOKEN` 配發給助教。
+
+管理員從 `/teacher` 使用 NYCU 登入，授予其他帳號建立考試的許可。受邀的共同管理者即使沒有建立許可，仍能管理獲邀的考試。OAuth 返回網址允許 `/teacher` 與既有考試頁面；API 對 cookie 認證的寫入檢查同源 Origin。

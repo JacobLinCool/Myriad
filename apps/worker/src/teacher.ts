@@ -1,3 +1,4 @@
+import { requireCreator } from "./permissions.js";
 import { Hono } from "hono";
 import { setCookie, deleteCookie } from "hono/cookie";
 import { z } from "zod";
@@ -23,53 +24,10 @@ import {
 } from "./core.js";
 import { summary, purgePreview, type AttemptRow } from "./attempts.js";
 export const teachers = new Hono<{ Bindings: Env }>();
-teachers.post("/api/admin/teachers", async (c) => {
-  requireAdmin(c);
-  const body = z
-    .object({ name: z.string().min(1).max(100) })
-    .parse(await c.req.json());
-  const id = crypto.randomUUID(),
-    credential = token();
-  await c.env.DB.prepare(
-    "INSERT INTO teachers(id,name,token_hash) VALUES(?,?,?)",
-  )
-    .bind(id, body.name, await sha256Hex(credential))
-    .run();
-  return c.json({ id, name: body.name, token: credential }, 201);
-});
-teachers.delete("/api/admin/teachers/:tid", async (c) => {
-  requireAdmin(c);
-  await c.env.DB.prepare("UPDATE teachers SET revoked_at=? WHERE id=?")
-    .bind(Date.now(), c.req.param("tid"))
-    .run();
-  return c.json({ revoked: true });
-});
-teachers.get("/api/admin/legacy", async (c) => {
-  requireAdmin(c);
-  return c.json(
-    (
-      await c.env.DB.prepare(
-        "SELECT id,title FROM exams WHERE id NOT IN (SELECT exam_id FROM legacy_owners)",
-      ).all()
-    ).results,
-  );
-});
-teachers.post("/api/admin/legacy/:eid/owner", async (c) => {
-  requireAdmin(c);
-  const body = z
-    .object({ teacherId: z.string().uuid() })
-    .parse(await c.req.json());
-  await c.env.DB.prepare(
-    "INSERT INTO legacy_owners VALUES(?,?) ON CONFLICT(exam_id) DO UPDATE SET teacher_id=excluded.teacher_id",
-  )
-    .bind(c.req.param("eid"), body.teacherId)
-    .run();
-  return c.json({ assigned: true });
-});
 teachers.post("/api/teacher/session", async (c) => {
   const tid = await teacher(c),
     credential = token();
-  await c.env.DB.prepare("INSERT INTO teacher_sessions VALUES(?,?,?)")
+  await c.env.DB.prepare("INSERT INTO management_sessions VALUES(?,?,?)")
     .bind(await sha256Hex(credential), tid, Date.now() + 8 * 3600000)
     .run();
   setCookie(c, "myriad_teacher", credential, {
@@ -87,9 +45,17 @@ teachers.delete("/api/teacher/session", async (c) => {
     .header("Cookie")
     ?.match(/(?:^|;\s*)myriad_teacher=([^;]+)/)?.[1];
   if (cookie)
-    await c.env.DB.prepare("DELETE FROM teacher_sessions WHERE hash=?")
+    await c.env.DB.prepare("DELETE FROM management_sessions WHERE hash=?")
       .bind(await sha256Hex(cookie))
       .run();
+  const oauth = c.req
+    .header("Cookie")
+    ?.match(/(?:^|;\s*)myriad_student=([^;]+)/)?.[1];
+  if (oauth)
+    await c.env.DB.prepare("DELETE FROM student_sessions WHERE hash=?")
+      .bind(await sha256Hex(oauth))
+      .run();
+  deleteCookie(c, "myriad_student", { path: "/" });
   deleteCookie(c, "myriad_teacher", { path: "/api" });
   return c.json({ loggedOut: true });
 });
@@ -98,33 +64,12 @@ teachers.get("/api/teacher/exams", async (c) => {
   return c.json(
     (
       await c.env.DB.prepare(
-        "SELECT id,title,starts_at AS startsAt,ends_at AS endsAt,revision FROM exam_catalog WHERE teacher_id=? ORDER BY starts_at DESC",
+        "SELECT e.id,e.title,e.starts_at AS startsAt,e.ends_at AS endsAt,e.revision,e.owner_id AS ownerId FROM exam_catalog e WHERE e.owner_id=? OR EXISTS(SELECT 1 FROM exam_collaborators m WHERE m.exam_id=e.id AND m.account_id=?) ORDER BY e.starts_at DESC",
       )
-        .bind(tid)
+        .bind(tid, tid)
         .all()
     ).results,
   );
-});
-teachers.get("/api/teacher/legacy/:eid", async (c) => {
-  const tid = await teacher(c);
-  const owner = await c.env.DB.prepare(
-    "SELECT teacher_id FROM legacy_owners WHERE exam_id=?",
-  )
-    .bind(c.req.param("eid"))
-    .first<{ teacher_id: string }>();
-  if (owner?.teacher_id !== tid) fail("Legacy exam not found", 404);
-  const { after, limit } = page(c);
-  const rows = await c.env.DB.prepare(
-    "SELECT rowid AS sequence,* FROM submissions WHERE exam_id=? AND rowid>? ORDER BY rowid LIMIT ?",
-  )
-    .bind(c.req.param("eid"), after, limit + 1)
-    .all<{ sequence: number }>();
-  const selected = rows.results.slice(0, limit);
-  return c.json({
-    submissions: selected,
-    hasMore: rows.results.length > limit,
-    nextCursor: selected.at(-1)?.sequence ?? after,
-  });
 });
 /** Stores an upload. Uploads are allowed at any time and only become current on publish. */
 teachers.post("/api/teacher/exams/:eid/revisions", async (c) => {
@@ -134,26 +79,25 @@ teachers.post("/api/teacher/exams/:eid/revisions", async (c) => {
   );
   const content = bundle.content;
   if (content.exam.id !== c.req.param("eid")) fail("Exam ID mismatch");
-  const legacy = await c.env.DB.prepare(
-    "SELECT e.id,o.teacher_id FROM exams e LEFT JOIN legacy_owners o ON o.exam_id=e.id WHERE e.id=?",
-  )
+  const prior = await c.env.DB.prepare("SELECT id FROM exam_catalog WHERE id=?")
     .bind(content.exam.id)
-    .first<{ teacher_id: string | null }>();
-  if (legacy && legacy.teacher_id !== tid)
-    fail("Administrator must assign this legacy exam first", 403);
-  await c.env.DB.prepare(
-    "INSERT INTO exam_catalog(id,teacher_id,title,starts_at,ends_at,rules,policy) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
-  )
-    .bind(
-      content.exam.id,
-      tid,
-      content.exam.title,
-      content.exam.startsAt,
-      content.exam.endsAt,
-      content.exam.rules,
-      content.exam.policy,
+    .first();
+  if (!prior) {
+    await requireCreator(c, tid);
+    await c.env.DB.prepare(
+      "INSERT INTO exam_catalog(id,owner_id,title,starts_at,ends_at,rules,policy) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
     )
-    .run();
+      .bind(
+        content.exam.id,
+        tid,
+        content.exam.title,
+        content.exam.startsAt,
+        content.exam.endsAt,
+        content.exam.rules,
+        content.exam.policy,
+      )
+      .run();
+  }
   const e = await exam(c, true);
   const existing = await c.env.DB.prepare(
     "SELECT revision FROM exam_revisions WHERE exam_id=? AND revision=?",
@@ -182,7 +126,12 @@ teachers.post("/api/teacher/exams/:eid/revisions", async (c) => {
       .bind(e.id, bundle.revision, key, JSON.stringify(stored), Date.now())
       .run();
   }
-  return c.json({ examId: e.id, revision: bundle.revision, staged: true });
+  return c.json({
+    examId: e.id,
+    revision: bundle.revision,
+    currentRevision: e.revision,
+    staged: true,
+  });
 });
 /**
  * Makes an upload current. The uploaded exam settings replace the site's, and
@@ -192,12 +141,30 @@ teachers.post(
   "/api/teacher/exams/:eid/revisions/:revision/publish",
   async (c) => {
     const e = await exam(c, true);
+    const { expectedRevision } = z
+      .object({
+        expectedRevision: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .nullable(),
+      })
+      .strict()
+      .parse(await c.req.json());
+    if (e.revision !== expectedRevision)
+      fail("Exam changed; review the current revision before publishing", 409);
     const r = await c.env.DB.prepare(
       "SELECT manifest FROM exam_revisions WHERE exam_id=? AND revision=?",
     )
       .bind(e.id, c.req.param("revision"))
       .first<{ manifest: string }>();
     if (!r) fail("Revision not staged", 404);
+    if (
+      JSON.parse(r.manifest).problems.some(
+        (p: { semanticCheck?: string }) => p.semanticCheck,
+      ) &&
+      !c.env.OPENAI_API_KEY
+    )
+      fail("Configure OPENAI_API_KEY before publishing semantic checks", 503);
     const previous = e.revision
       ? {
           metadata: {
@@ -214,8 +181,8 @@ teachers.post(
         }
       : null;
     const m = JSON.parse(r.manifest);
-    await c.env.DB.prepare(
-      "UPDATE exam_catalog SET revision=?,manifest=?,title=?,starts_at=?,ends_at=?,rules=?,policy=?,published_at=? WHERE id=? AND teacher_id=?",
+    const published = await c.env.DB.prepare(
+      "UPDATE exam_catalog SET revision=?,manifest=?,title=?,starts_at=?,ends_at=?,rules=?,policy=?,published_at=? WHERE id=? AND owner_id=? AND revision IS ? RETURNING id",
     )
       .bind(
         c.req.param("revision"),
@@ -227,9 +194,12 @@ teachers.post(
         m.exam.policy,
         Date.now(),
         e.id,
-        e.teacher_id,
+        e.owner_id,
+        expectedRevision,
       )
-      .run();
+      .first();
+    if (!published)
+      fail("Exam changed; review the current revision before publishing", 409);
     return c.json({
       examId: e.id,
       revision: c.req.param("revision"),
@@ -254,6 +224,8 @@ teachers.get("/api/teacher/exams/:eid", async (c) => {
     : [];
   return c.json({
     id: e.id,
+    ownerId: e.owner_id,
+    canManageMembers: e.owner_id === (await teacher(c)),
     title: e.title,
     startsAt: e.starts_at,
     endsAt: e.ends_at,
@@ -324,7 +296,7 @@ teachers.patch("/api/teacher/exams/:eid", async (c) => {
   };
   if (next.endsAt <= next.startsAt) fail("結束時間必須晚於開始時間");
   await c.env.DB.prepare(
-    "UPDATE exam_catalog SET title=?,starts_at=?,ends_at=?,rules=?,policy=? WHERE id=? AND teacher_id=?",
+    "UPDATE exam_catalog SET title=?,starts_at=?,ends_at=?,rules=?,policy=? WHERE id=? AND owner_id=?",
   )
     .bind(
       next.title,
@@ -333,7 +305,7 @@ teachers.patch("/api/teacher/exams/:eid", async (c) => {
       next.rules,
       next.policy,
       e.id,
-      e.teacher_id,
+      e.owner_id,
     )
     .run();
   return c.json(next);
@@ -381,6 +353,22 @@ teachers.get("/api/teacher/exams/:eid/submissions", async (c) => {
     nextCursor: selected.at(-1)?.sequence ?? after,
   });
 });
+/** Source is fetched only when a teacher opens an individual submission. */
+teachers.get("/api/teacher/exams/:eid/submissions/:aid", async (c) => {
+  const e = await exam(c, true);
+  const row = await c.env.DB.prepare(
+    "SELECT code,result FROM attempts WHERE exam_id=? AND id=? AND preview=0",
+  )
+    .bind(e.id, c.req.param("aid"))
+    .first<{ code: string; result: string | null }>();
+  if (!row) fail("Submission not found", 404);
+  return c.json({
+    code: row.code,
+    semanticCheck: row.result
+      ? JSON.parse(row.result).semanticCheck
+      : undefined,
+  });
+});
 teachers.get("/api/teacher/exams/:eid/analysis", async (c) => {
   const e = await exam(c, true);
   await purgePreview(c.env.DB, e);
@@ -399,7 +387,45 @@ teachers.get("/api/teacher/exams/:eid/analysis", async (c) => {
   )
     .bind(e.id)
     .all();
-  return c.json({ totals, devices: devices.results, timings: timings.results });
+  // One grouped query: do not download source or issue a query per attempt.
+  const submissions = await c.env.DB.prepare(
+    `
+    SELECT a.id,a.sequence,a.participant_id AS participantId,a.student_id AS studentId,
+      a.identity_kind AS identityKind,a.problem_id AS problemId,a.problem_version AS problemVersion,
+      CASE WHEN a.status='running' AND a.expires_at<=? THEN 'expired' ELSE a.status END AS status,
+      a.created_at AS createdAt,COALESCE(json_extract(a.result,'$.score'),0) AS score,
+      (a.status='complete' AND COALESCE(json_extract(a.result,'$.semanticCheck.passed'),1)=1 AND COUNT(c.idx)>0 AND SUM(json_extract(c.verdict,'$.status')='AC')=COUNT(c.idx)) AS passed,
+      COUNT(c.idx) AS testsReported,length(CAST(a.code AS BLOB)) AS codeBytes,
+      CASE WHEN COUNT(json_extract(c.claim,'$.metrics.instructionCost'))=COUNT(c.idx)
+        THEN SUM(json_extract(c.claim,'$.metrics.instructionCost')) END AS instructionCost,
+      CASE WHEN COUNT(json_extract(c.claim,'$.metrics.memoryBytes'))=COUNT(c.idx)
+        THEN MAX(json_extract(c.claim,'$.metrics.memoryBytes')) END AS memoryBytes,
+      CASE WHEN COUNT(DISTINCT json_extract(c.claim,'$.metrics.costProfile'))=1
+        AND COUNT(json_extract(c.claim,'$.metrics.costProfile'))=COUNT(c.idx)
+        THEN MIN(json_extract(c.claim,'$.metrics.costProfile')) END AS costProfile,
+      CASE WHEN COUNT(DISTINCT json_extract(c.claim,'$.metrics.costModel'))=1
+        AND COUNT(json_extract(c.claim,'$.metrics.costModel'))=COUNT(c.idx)
+        THEN MIN(json_extract(c.claim,'$.metrics.costModel')) END AS costModel
+    FROM attempts a LEFT JOIN attempt_claims c ON c.attempt_id=a.id
+    WHERE a.exam_id=? AND a.preview=0 GROUP BY a.id ORDER BY a.sequence
+  `,
+  )
+    .bind(Date.now(), e.id)
+    .all<
+      Omit<import("@myriad/shared").MonitoredSubmission, "passed"> & {
+        passed: number;
+      }
+    >();
+  return c.json({
+    totals,
+    devices: devices.results,
+    timings: timings.results,
+    updatedAt: Date.now(),
+    submissions: submissions.results.map((s) => ({
+      ...s,
+      passed: s.passed === 1,
+    })),
+  });
 });
 teachers.get("/api/teacher/exams/:eid/telemetry", async (c) => {
   const e = await exam(c, true),
@@ -468,6 +494,10 @@ teachers.post("/api/teacher/exams/:eid/results", async (c) => {
       s.verdicts.some((v) => v.index >= p.testCount)
     )
       fail("Invalid submission verification", 409);
+    const saved = a.result ? JSON.parse(a.result) : {};
+    if (p.semanticCheck && typeof saved.semanticCheck?.passed !== "boolean")
+      fail("Missing semantic verdict", 409);
+    const tests = computeGroupVerdicts(p.groups, s.verdicts);
     return {
       studentId: a.student_id,
       participantId: a.participant_id,
@@ -475,7 +505,14 @@ teachers.post("/api/teacher/exams/:eid/results", async (c) => {
       problemId: a.problem_id,
       sequence: a.sequence,
       ...s,
-      ...computeGroupVerdicts(p.groups, s.verdicts),
+      ...tests,
+      ...(p.semanticCheck
+        ? {
+            semanticCheck: saved.semanticCheck,
+            testScore: tests.score,
+            score: saved.semanticCheck.passed ? tests.score : 0,
+          }
+        : {}),
     };
   });
   const scores = [...new Set(all.map((a) => a.participant_id))]
@@ -545,9 +582,9 @@ teachers.get("/api/teacher/exams/:eid/results", async (c) => {
     })),
   });
 });
-teachers.put("/api/teacher/toolchains/*", async (c) => {
-  await teacher(c);
-  const key = c.req.path.slice("/api/teacher/".length);
+teachers.put("/api/admin/toolchains/*", async (c) => {
+  await requireAdmin(c);
+  const key = c.req.path.slice("/api/admin/".length);
   if (key.includes("..") || !/^toolchains\/[a-zA-Z0-9_./-]+$/.test(key))
     fail("Invalid asset path");
   const data = await c.req.arrayBuffer(),

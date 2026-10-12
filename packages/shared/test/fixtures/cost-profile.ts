@@ -1,0 +1,3 @@
+// Actual @wasm-oj/core 0.2.3 C/wasip1/release profile, including toolchain and runtime digests.
+export const cCostProfile =
+  "wasm-oj-cost:contract-2:c:wasip1:release:content-7f10d90b8e52b270f04874641a1d0bf9e94e85b4f6c7573a774cebbc6d32552a.21ded33b9c6d4e1aaad5528c940bdaf6c3e84be77ea8f522f018ca7289a2a224.895eee17c63b1112c84adcc4ddbcb38e0c18e53bff15f50a8689b9b82d87b1ff.6382dcdfb6a2da49032a0e08da3b1fb490eb24432be85c3c12e3e871a5065273:runtime-d3e44cafdc1c17a7e6bd4591ef04ec8161af805a519b5bbff437b15e5accd442:weighted";

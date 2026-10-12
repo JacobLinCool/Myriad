@@ -88,6 +88,9 @@ beforeAll(async () => {
     bindings: {
       APP_ORIGIN: base,
       NYCU_CLIENT_ID: "test-client",
+      ADMIN_IDENTITIES: JSON.stringify([
+        { provider: "nycu", subject: "platform-admin" },
+      ]),
       NYCU_CLIENT_SECRET: "test-oauth-secret",
       ATTEMPT_SECRET: "test-attempt-secret-at-least-32-characters",
     },
@@ -105,8 +108,12 @@ beforeAll(async () => {
       await db.prepare(statement).run();
   }
   await db
-    .prepare("INSERT INTO teachers VALUES(?,?,?,NULL)")
-    .bind("t", "Teacher", await sha256Hex("teacher-token"))
+    .prepare("INSERT INTO accounts VALUES(?,'local',?,?)")
+    .bind("t", "t", "Teacher")
+    .run();
+  await db
+    .prepare("INSERT INTO account_tokens VALUES('t','t',?,1,NULL)")
+    .bind(await sha256Hex("teacher-token"))
     .run();
   const manifest = {
     exam: { salt: "salt-at-least-sixteen", policy: "best", rules: "" },
@@ -122,7 +129,7 @@ beforeAll(async () => {
   };
   await db
     .prepare(
-      "INSERT INTO exam_catalog(id,teacher_id,revision,title,starts_at,ends_at,manifest) VALUES(?,?,?,?,?,?,?)",
+      "INSERT INTO exam_catalog(id,owner_id,revision,title,starts_at,ends_at,manifest) VALUES(?,?,?,?,?,?,?)",
     )
     .bind(
       "auth-exam",
@@ -377,4 +384,115 @@ it("a login started from another address returns to the page with the expected o
     `/exams/quiz?auth_error=origin&expected=${encodeURIComponent(base)}`,
   );
   expect(response.headers.get("set-cookie")).toBeNull();
+});
+it("maps verified OAuth identities to administrator and creation permissions without provider confusion", async () => {
+  const admin = await signIn("platform-admin"),
+    ordinary = await signIn("ta-user");
+  const request = (
+    path: string,
+    cookie: string,
+    method = "GET",
+    body?: unknown,
+  ) =>
+    call(path, {
+      method,
+      headers: {
+        Cookie: cookie,
+        Origin: base,
+        "Content-Type": "application/json",
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  const access = await (
+    await request("/api/teacher/access", admin.cookie)
+  ).json<any>();
+  expect(access).toMatchObject({
+    isAdmin: true,
+    canCreateExams: false,
+    account: { provider: "nycu", subject: "platform-admin" },
+  });
+  expect(
+    (await request("/api/admin/creation-grants", ordinary.cookie)).status,
+  ).toBe(403);
+  // Another provider with the same subject must not grant NYCU creation rights.
+  expect(
+    (
+      await request("/api/admin/creation-grants", admin.cookie, "POST", {
+        provider: "other",
+        subject: "ta-user",
+      })
+    ).status,
+  ).toBe(201);
+  expect(
+    (await (await request("/api/teacher/access", ordinary.cookie)).json<any>())
+      .canCreateExams,
+  ).toBe(false);
+  const granted = await (
+    await request("/api/admin/creation-grants", admin.cookie, "POST", {
+      provider: "nycu",
+      subject: "ta-user",
+    })
+  ).json<any>();
+  expect(
+    (await (await request("/api/teacher/access", ordinary.cookie)).json<any>())
+      .canCreateExams,
+  ).toBe(true);
+  expect(
+    (
+      await call("/api/admin/creation-grants", {
+        method: "POST",
+        headers: {
+          Cookie: admin.cookie,
+          Origin: "https://evil.test",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ provider: "nycu", subject: "evil" }),
+      })
+    ).status,
+  ).toBe(403);
+  const credential = await (
+    await request("/api/teacher/tokens", ordinary.cookie, "POST", {})
+  ).json<any>();
+  expect(credential.token).toHaveLength(64);
+  expect(
+    (
+      await call("/api/teacher/exams", {
+        headers: { Authorization: `Bearer ${credential.token}` },
+      })
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await request(
+        `/api/admin/creation-grants/${granted.id}`,
+        admin.cookie,
+        "DELETE",
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (await (await request("/api/teacher/access", ordinary.cookie)).json<any>())
+      .canCreateExams,
+  ).toBe(false);
+  expect(
+    (
+      await request(
+        `/api/teacher/tokens/${credential.id}`,
+        ordinary.cookie,
+        "DELETE",
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await call("/api/teacher/exams", {
+        headers: { Authorization: `Bearer ${credential.token}` },
+      })
+    ).status,
+  ).toBe(401);
+  const begin = await start("/teacher");
+  expect(begin.response.status).toBe(302);
+  expect((await call("/api/auth/nycu/start?returnTo=//evil.test")).status).toBe(
+    400,
+  );
 });

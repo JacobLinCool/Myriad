@@ -1,8 +1,10 @@
+import { cCostProfile } from "../../../packages/shared/test/fixtures/cost-profile.js";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { Miniflare } from "miniflare";
 import { build } from "esbuild";
 import { readFile, readdir } from "node:fs/promises";
 import {
+  boundChecksum,
   canonicalJson,
   sha256Hex,
   problemVersion,
@@ -15,6 +17,10 @@ let teacherToken: string;
 let secondToken: string;
 let revision: string;
 let version: string;
+let semanticCalls = 0;
+let semanticGate: Promise<void> | undefined;
+let semanticOnRequest: (() => void) | undefined;
+let semanticMode: "pass" | "fail" | "error" = "pass";
 async function call(
   path: string,
   method = "GET",
@@ -30,6 +36,24 @@ async function call(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
+async function provision(name: string, creator = true) {
+  const id = crypto.randomUUID(),
+    credential = crypto.randomUUID();
+  await db
+    .prepare("INSERT INTO accounts VALUES(?,?,?,?)")
+    .bind(id, "local", id, name)
+    .run();
+  await db
+    .prepare("INSERT INTO account_tokens VALUES(?,?,?,?,NULL)")
+    .bind(id, id, await sha256Hex(credential), Date.now())
+    .run();
+  if (creator)
+    await db
+      .prepare("INSERT INTO exam_creation_grants VALUES(?,?)")
+      .bind(id, Date.now())
+      .run();
+  return { id, token: credential };
+}
 async function bundle(
   id: string,
   options: {
@@ -37,6 +61,8 @@ async function bundle(
     statement?: string;
     startsAt?: number;
     solution?: string;
+    semanticCheck?: string;
+    template?: string;
   } = {},
 ) {
   const tests = options.tests ?? id;
@@ -45,6 +71,8 @@ async function bundle(
     order: 0,
     title: "Problem",
     statementMd: options.statement ?? "SECRET STATEMENT",
+    ...(options.semanticCheck ? { semanticCheck: options.semanticCheck } : {}),
+    ...(options.template !== undefined ? { template: options.template } : {}),
     testCount: 2,
     groups: [{ name: "all", tests: [0, 1] }],
     limits: {
@@ -88,14 +116,18 @@ async function bundle(
 }
 async function publish(id: string, options?: Parameters<typeof bundle>[1]) {
   const b = await bundle(id, options);
-  expect(
-    (await call(`/api/teacher/exams/${id}/revisions`, "POST", b, teacherToken))
-      .status,
-  ).toBe(200);
+  const staged = await call(
+    `/api/teacher/exams/${id}/revisions`,
+    "POST",
+    b,
+    teacherToken,
+  );
+  expect(staged.status).toBe(200);
+  const { currentRevision } = (await staged.json()) as any;
   const published = await call(
     `/api/teacher/exams/${id}/revisions/${b.revision}/publish`,
     "POST",
-    undefined,
+    { expectedRevision: currentRevision },
     teacherToken,
   );
   expect(published.status).toBe(200);
@@ -122,9 +154,9 @@ function request(student = "student") {
     code: "int main(){}",
   };
 }
-async function connect(aid: string, token: string) {
+async function connect(aid: string, token: string, examId = "first") {
   const response = await mf.dispatchFetch(
-    `http://localhost/api/exams/first/attempts/${aid}/ws`,
+    `http://localhost/api/exams/${examId}/attempts/${aid}/ws`,
     { headers: { Upgrade: "websocket" } },
   );
   const ws = response.webSocket!;
@@ -160,7 +192,7 @@ async function connect(aid: string, token: string) {
     });
   }
   ws.send(JSON.stringify({ type: "auth", token }));
-  await wait((m) => m.type === "ready");
+  await wait((m) => m.type === "ready" || m.type === "state");
   return { ws, wait, messages };
 }
 beforeAll(async () => {
@@ -177,7 +209,36 @@ beforeAll(async () => {
     compatibilityDate: "2024-10-01",
     d1Databases: ["DB"],
     r2Buckets: ["BUCKET"],
+    outboundService: async (req) => {
+      expect(req.url).toBe("https://api.openai.com/v1/responses");
+      const body = (await req.json()) as any;
+      expect(body.model).toBe("gpt-5.6-luna");
+      expect(body.reasoning.effort).toBe("low");
+      semanticCalls++;
+      semanticOnRequest?.();
+      await semanticGate;
+      if (semanticMode === "error")
+        return new Response("unavailable", { status: 503 });
+      return Response.json({
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({
+                  passed: semanticMode === "pass",
+                  reason: semanticMode === "fail" ? "未使用指標。" : "",
+                }),
+              },
+            ],
+          },
+        ],
+      });
+    },
     bindings: {
+      OPENAI_API_KEY: "test-openai-key",
       ADMIN_TOKEN: "root-secret",
       ATTEMPT_SECRET: "secret-for-tests-must-be-at-least-32-bytes",
     },
@@ -194,26 +255,8 @@ beforeAll(async () => {
       .filter(Boolean))
       await db.prepare(statement).run();
   }
-  teacherToken = (
-    (await (
-      await call(
-        "/api/admin/teachers",
-        "POST",
-        { name: "Teacher" },
-        "root-secret",
-      )
-    ).json()) as any
-  ).token;
-  secondToken = (
-    (await (
-      await call(
-        "/api/admin/teachers",
-        "POST",
-        { name: "Other" },
-        "root-secret",
-      )
-    ).json()) as any
-  ).token;
+  teacherToken = (await provision("Teacher")).token;
+  secondToken = (await provision("Other")).token;
 }, 30000);
 afterAll(async () => {
   await mf?.dispose();
@@ -256,6 +299,112 @@ describe.sequential("real Worker / D1 journeys", () => {
       ).status,
     ).toBe(404);
     expect((await call("/api/exam")).status).toBe(404);
+  });
+  it("records resource measurements and exposes private, accurate monitoring", async () => {
+    const req = { ...request("metrics"), code: "// 測試\nint main(){}" };
+    const created = (await (
+      await call("/api/exams/first/attempts", "POST", req)
+    ).json()) as any;
+    const socket = await connect(created.attempt.id, created.token);
+    for (const index of [0, 1])
+      socket.ws.send(
+        JSON.stringify({
+          type: "claim",
+          claim: {
+            index,
+            status: "re",
+            metrics: {
+              inputBytes: 4 + index,
+              instructionCost: index * 20,
+              memoryBytes: 100 + index * 10,
+              costProfile: cCostProfile,
+              costModel: "test",
+            },
+          },
+        }),
+      );
+    const completed = await socket.wait(
+      (m) => m.attempt?.status === "complete",
+    );
+    expect(completed.attempt.verdicts[0].metrics).toMatchObject({
+      inputBytes: 4,
+      instructionCost: 0,
+      memoryBytes: 100,
+    });
+    socket.ws.close();
+    const restored = await connect(created.attempt.id, created.token);
+    const state = await restored.wait((m) => m.attempt?.status === "complete");
+    expect(state.attempt.verdicts).toEqual(completed.attempt.verdicts);
+    restored.ws.close();
+    const response = await call(
+      "/api/teacher/exams/first/analysis",
+      "GET",
+      undefined,
+      teacherToken,
+    );
+    expect(response.status).toBe(200);
+    const data = (await response.json()) as any;
+    const submission = data.submissions.find(
+      (s: any) => s.id === req.operationId,
+    );
+    expect(submission).toMatchObject({
+      instructionCost: 20,
+      memoryBytes: 110,
+      codeBytes: new TextEncoder().encode(req.code).length,
+      passed: false,
+      status: "complete",
+      testsReported: 2,
+      costProfile: cCostProfile,
+    });
+    expect(submission).not.toHaveProperty("code");
+    const sourcePath = `/api/teacher/exams/first/submissions/${req.operationId}`;
+    expect((await call(sourcePath)).status).toBe(401);
+    expect((await call(sourcePath, "GET", undefined, secondToken)).status).toBe(
+      404,
+    );
+    expect(
+      await (await call(sourcePath, "GET", undefined, teacherToken)).json(),
+    ).toEqual({ code: req.code });
+    // Missing individual measurements must not produce a misleading partial total.
+    await db
+      .prepare(
+        "UPDATE attempt_claims SET claim=json_remove(claim,'$.metrics.instructionCost') WHERE attempt_id=? AND idx=0",
+      )
+      .bind(req.operationId)
+      .run();
+    const incomplete = (await (
+      await call(
+        "/api/teacher/exams/first/analysis",
+        "GET",
+        undefined,
+        teacherToken,
+      )
+    ).json()) as any;
+    expect(
+      incomplete.submissions.find((s: any) => s.id === req.operationId)
+        .instructionCost,
+    ).toBeNull();
+    const pending = request("metrics-expired");
+    await call("/api/exams/first/attempts", "POST", pending);
+    await db
+      .prepare("UPDATE attempts SET expires_at=1 WHERE id=?")
+      .bind(pending.operationId)
+      .run();
+    const expired = (await (
+      await call(
+        "/api/teacher/exams/first/analysis",
+        "GET",
+        undefined,
+        teacherToken,
+      )
+    ).json()) as any;
+    expect(
+      expired.submissions.find((s: any) => s.id === pending.operationId),
+    ).toMatchObject({
+      status: "expired",
+      instructionCost: null,
+      memoryBytes: null,
+    });
   });
   it("reserves cooldown atomically and returns the same attempt on retry", async () => {
     const req = request("parallel");
@@ -597,23 +746,11 @@ describe.sequential("real Worker / D1 journeys", () => {
       },
     );
     expect(csrf.status).toBe(403);
-    const t = (await (
-      await call(
-        "/api/admin/teachers",
-        "POST",
-        { name: "Revocable" },
-        "root-secret",
-      )
-    ).json()) as any;
+    const t = await provision("Revocable");
     expect(
       (await call("/api/teacher/exams", "GET", undefined, t.token)).status,
     ).toBe(200);
-    await call(
-      `/api/admin/teachers/${t.id}`,
-      "DELETE",
-      undefined,
-      "root-secret",
-    );
+    await call(`/api/teacher/tokens/${t.id}`, "DELETE", undefined, t.token);
     expect(
       (await call("/api/teacher/exams", "GET", undefined, t.token)).status,
     ).toBe(401);
@@ -751,4 +888,513 @@ describe.sequential("real Worker / D1 journeys", () => {
       "SECRET SOLUTION v2",
     );
   });
+});
+
+it("separates creation permission, exam ownership, collaboration and platform administration", async () => {
+  const creator = await provision("Creator", false),
+    collaborator = await provision("Collaborator", false),
+    outsider = await provision("Outsider", false);
+  const own = await bundle("permission-exam");
+  const stage = "/api/teacher/exams/permission-exam/revisions",
+    members = "/api/teacher/exams/permission-exam/members";
+  expect((await call(stage, "POST", own, creator.token)).status).toBe(403);
+  expect(
+    (
+      await call(
+        "/api/admin/creation-grants",
+        "POST",
+        { provider: "local", subject: creator.id },
+        outsider.token,
+      )
+    ).status,
+  ).toBe(403);
+  expect(
+    (
+      await call(
+        "/api/admin/creation-grants",
+        "POST",
+        { provider: "local", subject: creator.id },
+        "root-secret",
+      )
+    ).status,
+  ).toBe(201);
+  expect((await call(stage, "POST", own, creator.token)).status).toBe(200);
+  expect(
+    (
+      await call(
+        members,
+        "POST",
+        { provider: "local", subject: collaborator.id },
+        creator.token,
+      )
+    ).status,
+  ).toBe(201);
+  const publish = `/api/teacher/exams/permission-exam/revisions/${own.revision}/publish`;
+  expect(
+    (
+      await call(
+        publish,
+        "POST",
+        { expectedRevision: null },
+        collaborator.token,
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (await call(publish, "POST", { expectedRevision: null }, creator.token))
+      .status,
+  ).toBe(409);
+  expect(
+    (
+      await call(
+        "/api/teacher/exams/permission-exam",
+        "PATCH",
+        { title: "Shared edit" },
+        collaborator.token,
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await call(
+        members,
+        "POST",
+        { provider: "local", subject: outsider.id },
+        collaborator.token,
+      )
+    ).status,
+  ).toBe(403);
+  expect(
+    (
+      await call(
+        `${members}/${creator.id}`,
+        "DELETE",
+        undefined,
+        collaborator.token,
+      )
+    ).status,
+  ).toBe(403);
+  for (const suffix of [
+    "",
+    "/analysis",
+    "/submissions",
+    "/submissions/unknown",
+    "/results",
+    "/export",
+    "/telemetry",
+    "/members",
+  ]) {
+    expect(
+      (
+        await call(
+          `/api/teacher/exams/permission-exam${suffix}`,
+          "GET",
+          undefined,
+          outsider.token,
+        )
+      ).status,
+    ).toBe(404);
+  }
+  expect((await call(stage, "POST", own, outsider.token)).status).toBe(404);
+  expect(
+    (
+      await call(
+        "/api/exams/permission-exam?preview=1",
+        "GET",
+        undefined,
+        collaborator.token,
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await call(
+        "/api/exams/permission-exam?preview=1",
+        "GET",
+        undefined,
+        outsider.token,
+      )
+    ).status,
+  ).toBe(403);
+  expect(
+    await (
+      await call("/api/teacher/exams", "GET", undefined, outsider.token)
+    ).json(),
+  ).toEqual([]);
+  expect(
+    (
+      (await (
+        await call("/api/teacher/exams", "GET", undefined, collaborator.token)
+      ).json()) as any[]
+    ).map((e) => e.id),
+  ).toEqual(["permission-exam"]);
+  expect(
+    (
+      await call(
+        "/api/teacher/exams/other-new/revisions",
+        "POST",
+        await bundle("other-new"),
+        collaborator.token,
+      )
+    ).status,
+  ).toBe(403);
+  expect(
+    (
+      await call(
+        "/api/admin/toolchains/test.json",
+        "PUT",
+        {},
+        collaborator.token,
+      )
+    ).status,
+  ).toBe(403);
+  expect(
+    (await call("/api/admin/toolchains/test.json", "PUT", {}, "root-secret"))
+      .status,
+  ).toBe(200);
+  expect(
+    (await call("/api/teacher/toolchains/test.json", "PUT", {}, creator.token))
+      .status,
+  ).toBe(404);
+  expect(
+    (await call("/api/admin/teachers", "POST", { name: "old" }, "root-secret"))
+      .status,
+  ).toBe(404);
+  expect(
+    (await call("/api/admin/legacy", "GET", undefined, "root-secret")).status,
+  ).toBe(404);
+  // Removing creation permission affects new exams, not ownership of existing exams.
+  expect(
+    (
+      await call(
+        `/api/admin/creation-grants/${creator.id}`,
+        "DELETE",
+        undefined,
+        "root-secret",
+      )
+    ).status,
+  ).toBe(200);
+  expect((await call(stage, "POST", own, creator.token)).status).toBe(200);
+  expect(
+    (
+      await call(
+        "/api/teacher/exams/no-new/revisions",
+        "POST",
+        await bundle("no-new"),
+        creator.token,
+      )
+    ).status,
+  ).toBe(403);
+  // An existing session cannot retain collaborator access after removal.
+  const session = await call(
+    "/api/teacher/session",
+    "POST",
+    undefined,
+    collaborator.token,
+  );
+  const cookie = session.headers.get("set-cookie")!.split(";")[0];
+  expect(
+    (
+      await call(
+        `${members}/${collaborator.id}`,
+        "DELETE",
+        undefined,
+        creator.token,
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await mf.dispatchFetch(
+        "http://localhost/api/teacher/exams/permission-exam",
+        { headers: { Cookie: cookie } },
+      )
+    ).status,
+  ).toBe(404);
+  expect((await call(stage, "POST", own, collaborator.token)).status).toBe(404);
+});
+it("persists semantic decisions, gates scores and recovers provider errors without losing tests", async () => {
+  const id = "semantic-example";
+  const published = await publish(id, {
+    semanticCheck: "必須使用指標",
+    template: "int solve(void);",
+  });
+  await active(id);
+  const publicData = (await (await call(`/api/exams/${id}`)).json()) as any;
+  expect(publicData.problems[0].template).toBe("int solve(void);");
+  expect(publicData.problems[0]).not.toHaveProperty("semanticCheck");
+  const previewData = (await (
+    await call(`/api/exams/${id}?preview=1`, "GET", undefined, teacherToken)
+  ).json()) as any;
+  expect(previewData.problems[0]).not.toHaveProperty("semanticCheck");
+  const exported = (await (
+    await call(
+      `/api/teacher/exams/${id}/export`,
+      "GET",
+      undefined,
+      teacherToken,
+    )
+  ).json()) as any;
+  expect(exported.bundles[0].content.problems[0].semanticCheck).toBe(
+    "必須使用指標",
+  );
+  const m = JSON.parse(
+    (await db
+      .prepare("SELECT manifest FROM exam_catalog WHERE id=?")
+      .bind(id)
+      .first<any>())!.manifest,
+  );
+  for (const mode of ["fail", "pass", "error"] as const) {
+    semanticMode = mode;
+    const requestBody = {
+      ...request(`semantic-${mode}`),
+      problemVersion: published.version,
+    };
+    const callsBefore = semanticCalls;
+    const created = (await (
+      await call(`/api/exams/${id}/attempts`, "POST", requestBody)
+    ).json()) as any;
+    const socket = await connect(created.attempt.id, created.token, id);
+    for (const index of [0, 1])
+      socket.ws.send(
+        JSON.stringify({
+          type: "claim",
+          claim: {
+            index,
+            status: "ok",
+            checksum: await boundChecksum({
+              salt: m.exam.salt,
+              studentId: requestBody.studentId,
+              problemId: "p",
+              index,
+              innerDigest: "a".repeat(64),
+            }),
+          },
+        }),
+      );
+    if (mode === "error") {
+      await socket.wait((v) => v.type === "error");
+      socket.ws.close();
+      expect(
+        (await db
+          .prepare("SELECT status FROM attempts WHERE id=?")
+          .bind(created.attempt.id)
+          .first<any>())!.status,
+      ).toBe("running");
+      expect(
+        (await db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM attempt_claims WHERE attempt_id=?",
+          )
+          .bind(created.attempt.id)
+          .first<any>())!.n,
+      ).toBe(2);
+      await db
+        .prepare("UPDATE semantic_checks SET lease_until=0 WHERE attempt_id=?")
+        .bind(created.attempt.id)
+        .run();
+      semanticMode = "pass";
+      const retry = await connect(created.attempt.id, created.token, id);
+      expect(
+        (await retry.wait((v) => v.attempt?.status === "complete")).attempt
+          .score,
+      ).toBe(1);
+      retry.ws.close();
+    } else {
+      const result = (
+        await socket.wait((v) => v.attempt?.status === "complete")
+      ).attempt;
+      expect(result.verdicts.every((v: any) => v.status === "AC")).toBe(true);
+      expect(result.testScore).toBe(1);
+      expect(result.score).toBe(mode === "pass" ? 1 : 0);
+      expect(result.semanticCheck.passed).toBe(mode === "pass");
+      socket.ws.close();
+      const replay = await connect(created.attempt.id, created.token, id);
+      expect(
+        (await replay.wait((v) => v.attempt?.status === "complete")).attempt
+          .semanticCheck,
+      ).toEqual(result.semanticCheck);
+      replay.ws.close();
+      expect(semanticCalls - callsBefore).toBe(1);
+    }
+  }
+  const analysis = (await (
+    await call(
+      `/api/teacher/exams/${id}/analysis`,
+      "GET",
+      undefined,
+      teacherToken,
+    )
+  ).json()) as any;
+  expect(
+    analysis.submissions.find((v: any) => v.studentId === "semantic-fail")
+      .passed,
+  ).toBe(false);
+  const stored = (
+    await db
+      .prepare("SELECT * FROM attempts WHERE exam_id=? ORDER BY sequence")
+      .bind(id)
+      .all<any>()
+  ).results;
+  await db
+    .prepare("UPDATE exam_catalog SET ends_at=? WHERE id=?")
+    .bind(Date.now() - 1, id)
+    .run();
+  const report = {
+    examId: id,
+    revision: published.revision,
+    policy: "best",
+    snapshot: stored.at(-1)!.sequence,
+    completedAt: Date.now(),
+    submissions: stored.map((a) => ({
+      id: a.id,
+      codeSha256: a.code_sha256,
+      problemVersion: a.problem_version,
+      classification: "CONFIRMED",
+      verdicts: [
+        { index: 0, status: "AC" },
+        { index: 1, status: "AC" },
+      ],
+    })),
+  };
+  const response = await call(
+    `/api/teacher/exams/${id}/results`,
+    "POST",
+    report,
+    teacherToken,
+  );
+  expect(response.status).toBe(200);
+  const data = (await response.json()) as any;
+  expect(
+    data.scores.find((s: any) => s.studentId === "semantic-fail").totalScore,
+  ).toBe(0);
+});
+it("shares a semantic lease across sockets and does not penalize model latency at the deadline", async () => {
+  const id = "semantic-concurrent";
+  const published = await publish(id, { semanticCheck: "必須使用指標" });
+  await active(id);
+  const m = JSON.parse(
+    (await db
+      .prepare("SELECT manifest FROM exam_catalog WHERE id=?")
+      .bind(id)
+      .first<any>())!.manifest,
+  );
+  const req = { ...request("concurrent"), problemVersion: published.version };
+  semanticMode = "pass";
+  let release!: () => void;
+  semanticGate = new Promise<void>((resolve) => (release = resolve));
+  const started = new Promise<void>((resolve) => (semanticOnRequest = resolve));
+  const before = semanticCalls;
+  const created = (await (
+    await call(`/api/exams/${id}/attempts`, "POST", req)
+  ).json()) as any;
+  await started;
+  expect(
+    (
+      await db
+        .prepare("SELECT COUNT(*) AS n FROM attempt_claims WHERE attempt_id=?")
+        .bind(created.attempt.id)
+        .first<any>()
+    ).n,
+  ).toBe(0);
+  const first = await connect(created.attempt.id, created.token, id);
+  try {
+    for (const index of [0, 1])
+      first.ws.send(
+        JSON.stringify({
+          type: "claim",
+          claim: {
+            index,
+            status: "ok",
+            checksum: await boundChecksum({
+              salt: m.exam.salt,
+              studentId: req.studentId,
+              problemId: "p",
+              index,
+              innerDigest: "a".repeat(64),
+            }),
+          },
+        }),
+      );
+    await first.wait((m) => m.type === "verdict" && m.verdict.index === 1);
+    await first.wait((m) => m.type === "semantic");
+    await started;
+    // A second connection cannot issue a second paid request while the first holds its lease.
+    const second = await connect(created.attempt.id, created.token, id);
+    await db
+      .prepare("UPDATE attempts SET expires_at=? WHERE id=?")
+      .bind(Date.now() - 1, created.attempt.id)
+      .run();
+    const history = (await (
+      await call(
+        `/api/exams/${id}/submissions?student=concurrent&identityKind=guest`,
+      )
+    ).json()) as any;
+    expect(history.submissions[0].status).toBe("running");
+    first.ws.close();
+    release();
+    const result = (await second.wait((m) => m.attempt?.status === "complete"))
+      .attempt;
+    expect(result.score).toBe(1);
+    expect(semanticCalls - before).toBe(1);
+    second.ws.close();
+  } finally {
+    release();
+    semanticGate = undefined;
+    semanticOnRequest = undefined;
+  }
+});
+
+it("keeps a completed early semantic rejection pending until every test is received", async () => {
+  const id = "semantic-first";
+  const published = await publish(id, { semanticCheck: "必須使用指標" });
+  await active(id);
+  semanticMode = "fail";
+  const before = semanticCalls;
+  const req = {
+    ...request("early-rejection"),
+    problemVersion: published.version,
+  };
+  const created = (await (
+    await call(`/api/exams/${id}/attempts`, "POST", req)
+  ).json()) as any;
+  let result: any;
+  for (let i = 0; i < 200; i++) {
+    result = await db
+      .prepare("SELECT result FROM semantic_checks WHERE attempt_id=?")
+      .bind(created.attempt.id)
+      .first<any>();
+    if (result?.result) break;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  expect(JSON.parse(result.result).passed).toBe(false);
+  expect(semanticCalls - before).toBe(1);
+  const pending = (await (
+    await call(`/api/exams/${id}/attempts/${created.attempt.id}`)
+  ).json()) as any;
+  expect(pending.status).toBe("running");
+  expect(pending.verdicts).toHaveLength(0);
+  const socket = await connect(created.attempt.id, created.token, id);
+  socket.ws.send(
+    JSON.stringify({ type: "claim", claim: { index: 0, status: "re" } }),
+  );
+  await socket.wait((m) => m.type === "verdict" && m.verdict.index === 0);
+  expect(
+    (
+      (await (
+        await call(`/api/exams/${id}/attempts/${created.attempt.id}`)
+      ).json()) as any
+    ).status,
+  ).toBe("running");
+  socket.ws.send(
+    JSON.stringify({ type: "claim", claim: { index: 1, status: "re" } }),
+  );
+  const final = (await socket.wait((m) => m.attempt?.status === "complete"))
+    .attempt;
+  expect(final.verdicts).toHaveLength(2);
+  expect(final.semanticCheck.passed).toBe(false);
+  expect(final.score).toBe(0);
+  expect(semanticCalls - before).toBe(1);
+  socket.ws.close();
+  semanticMode = "pass";
 });

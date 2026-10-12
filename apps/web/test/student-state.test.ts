@@ -429,3 +429,17 @@ it("a submission against a replaced problem reloads the exam in place and explai
   expect(s.code).toBe("keep me");
   expect(s.pending).toBe(false);
 });
+it("uses each problem template only for a new draft, preserving even empty saved drafts", () => {
+  const drafts = new Drafts(localStorage);
+  expect(
+    drafts.open("template-user", "exam", "function", "int solve(int n) {\n}\n"),
+  ).toBe("int solve(int n) {\n}\n");
+  drafts.save("");
+  expect(drafts.open("template-user", "exam", "function", "changed")).toBe("");
+  expect(
+    drafts.open("template-user", "exam", "another", "other template"),
+  ).toBe("other template");
+  expect(drafts.open("", "exam", "function", "anonymous template")).toBe(
+    "anonymous template",
+  );
+});
