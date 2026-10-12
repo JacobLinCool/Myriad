@@ -4,7 +4,9 @@ import { bodyLimit } from "hono/body-limit";
 import { ZodError } from "zod";
 import { TelemetryBatchSchema, ProblemPublicSchema } from "@myriad/shared";
 import {
-  exam,
+  cachedExam,
+  cachedExamList,
+  readExam,
   examOpen,
   inputKey,
   immutableObject,
@@ -15,7 +17,7 @@ import {
   type Env,
   type ExamRow,
 } from "./core.js";
-import { attempts, summary, type AttemptRow } from "./attempts.js";
+import { attempts, summaries, type AttemptRow } from "./attempts.js";
 import { auth, requireParticipant, studentAccount } from "./auth.js";
 import { background, captureException, proxyPostHog } from "./analytics.js";
 import { management } from "./management.js";
@@ -73,15 +75,13 @@ function publicExam(e: ExamRow, preview = false) {
   };
 }
 app.get("/api/exams", async (c) => {
-  const rows = await c.env.DB.prepare(
-    "SELECT * FROM exam_catalog WHERE revision IS NOT NULL AND ends_at>? ORDER BY starts_at DESC,id",
-  )
-    .bind(Date.now())
-    .all<ExamRow>();
-  return c.json(rows.results.map((e) => ({ ...publicExam(e), problems: [] })));
+  const now = Date.now();
+  // A cached list may still hold an exam that ended in the last few seconds.
+  const rows = (await cachedExamList(c.env)).filter((e) => e.ends_at > now);
+  return c.json(rows.map((e) => ({ ...publicExam(e), problems: [] })));
 });
 app.get("/api/exams/:eid", async (c) => {
-  const e = await exam(c);
+  const e = await readExam(c);
   return c.json(publicExam(e, await previewing(c, e)));
 });
 // Any stored version of a problem stays readable while the exam is open, so an
@@ -89,7 +89,7 @@ app.get("/api/exams/:eid", async (c) => {
 app.get(
   "/api/exams/:eid/problems/:pid/versions/:version/tests/:idx",
   async (c) => {
-    const e = await exam(c),
+    const e = await readExam(c),
       i = Number(c.req.param("idx")),
       version = c.req.param("version");
     if (!(await examOpen(c, e))) fail("Problem is not available", 403);
@@ -105,7 +105,7 @@ app.get(
   },
 );
 app.get("/api/exams/:eid/submissions", async (c) => {
-  const e = await exam(c),
+  const e = await readExam(c),
     student = c.req.query("student"),
     { after, limit } = page(c);
   if (!(await examOpen(c, e))) fail("Exam is not active", 403);
@@ -132,9 +132,7 @@ app.get("/api/exams/:eid/submissions", async (c) => {
     .bind(e.id, participant, preview ? 1 : 0, after, limit + 1)
     .all<AttemptRow>();
   return c.json({
-    submissions: await Promise.all(
-      rows.results.slice(0, limit).map((a) => summary(c.env.DB, a)),
-    ),
+    submissions: await summaries(c.env.DB, rows.results.slice(0, limit)),
     hasMore: rows.results.length > limit,
     nextCursor: rows.results.slice(0, limit).at(-1)?.sequence ?? after,
   });
@@ -142,14 +140,7 @@ app.get("/api/exams/:eid/submissions", async (c) => {
 app.post("/api/telemetry", bodyLimit({ maxSize: 32768 }), async (c) => {
   const { events } = TelemetryBatchSchema.parse(await c.req.json());
   for (const eid of new Set(events.map((e) => e.examId)))
-    if (
-      !(await c.env.DB.prepare(
-        "SELECT id FROM exam_catalog WHERE id=? AND revision IS NOT NULL",
-      )
-        .bind(eid)
-        .first())
-    )
-      fail("Exam not found", 404);
+    if (!(await cachedExam(c.env, eid))?.revision) fail("Exam not found", 404);
   const account = await studentAccount(c);
   await c.env.DB.batch(
     events.map((e) =>

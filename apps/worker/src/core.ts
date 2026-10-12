@@ -18,6 +18,8 @@ export interface Env {
   NYCU_CLIENT_ID?: string;
   NYCU_CLIENT_SECRET?: string;
   ATTEMPT_SECRET: string;
+  /** Milliseconds read paths may reuse an exam row; tests set "0". */
+  EXAM_CACHE_MS?: string;
 }
 export type AppContext = Context<{ Bindings: Env }>;
 export interface ExamRow {
@@ -75,6 +77,60 @@ async function loadExam(c: AppContext, owned: boolean): Promise<ExamRow> {
     (!owned && !row.revision)
   )
     fail("Exam not found", 404);
+  return row;
+}
+/**
+ * Exam rows reused by read paths for a few seconds, per isolate. Pages, test
+ * inputs and history tolerate a row that old; creating a submission, judging
+ * and every management route read the exam fresh with `exam`.
+ */
+const EXAM_CACHE_MS = 5000;
+const examCache = new Map<string, { row: ExamRow | null; until: number }>();
+let listCache: { rows: ExamRow[]; until: number } | undefined;
+function cacheMs(env: Env) {
+  return Number(env.EXAM_CACHE_MS ?? EXAM_CACHE_MS);
+}
+/** A change made here shows at once in this isolate; others catch up within the cache time. */
+export function forgetExam(id: string) {
+  examCache.delete(id);
+  listCache = undefined;
+}
+export async function cachedExam(
+  env: Env,
+  id: string,
+): Promise<ExamRow | null> {
+  const hit = examCache.get(id);
+  if (hit && hit.until > Date.now()) return hit.row;
+  const row = await env.DB.prepare("SELECT * FROM exam_catalog WHERE id=?")
+    .bind(id)
+    .first<ExamRow>();
+  const ms = cacheMs(env);
+  if (ms > 0) {
+    // Unknown ids are not kept, so made-up ids cannot grow the cache.
+    if (row) examCache.set(id, { row, until: Date.now() + ms });
+    if (examCache.size > 200) examCache.clear();
+  }
+  return row;
+}
+/** Published exams that have not ended, for the exam list. */
+export async function cachedExamList(env: Env): Promise<ExamRow[]> {
+  if (listCache && listCache.until > Date.now()) return listCache.rows;
+  const rows = (
+    await env.DB.prepare(
+      "SELECT * FROM exam_catalog WHERE revision IS NOT NULL AND ends_at>? ORDER BY starts_at DESC,id",
+    )
+      .bind(Date.now())
+      .all<ExamRow>()
+  ).results;
+  const ms = cacheMs(env);
+  if (ms > 0) listCache = { rows, until: Date.now() + ms };
+  return rows;
+}
+/** The published exam for a read path, possibly a few seconds old. */
+export async function readExam(c: AppContext): Promise<ExamRow> {
+  const row = await cachedExam(c.env, c.req.param("eid")!);
+  if (!row?.revision) fail("Exam not found", 404);
+  examOf.set(c, Promise.resolve(row));
   return row;
 }
 /**

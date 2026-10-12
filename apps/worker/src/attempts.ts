@@ -111,6 +111,26 @@ export async function summary(
     claims.results.map((r) => JSON.parse(r.verdict)),
   );
 }
+/** Summaries of several attempts, reading all their verdicts in one query. */
+export async function summaries(
+  db: D1Database,
+  rows: AttemptRow[],
+): Promise<AttemptSummary[]> {
+  if (!rows.length) return [];
+  const claims = await db
+    .prepare(
+      "SELECT attempt_id,verdict FROM attempt_claims WHERE attempt_id IN (SELECT value FROM json_each(?)) ORDER BY attempt_id,idx",
+    )
+    .bind(JSON.stringify(rows.map((a) => a.id)))
+    .all<{ attempt_id: string; verdict: string }>();
+  const verdicts = new Map<string, TestVerdict[]>();
+  for (const r of claims.results) {
+    const list = verdicts.get(r.attempt_id) ?? [];
+    list.push(JSON.parse(r.verdict));
+    verdicts.set(r.attempt_id, list);
+  }
+  return rows.map((a) => summaryOf(a, verdicts.get(a.id) ?? []));
+}
 /** A summary from verdicts already in hand, sorted by test index. */
 export function summaryOf(
   a: AttemptRow,

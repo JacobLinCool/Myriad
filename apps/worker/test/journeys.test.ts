@@ -241,6 +241,8 @@ beforeAll(async () => {
       OPENAI_API_KEY: "test-openai-key",
       ADMIN_TOKEN: "root-secret",
       ATTEMPT_SECRET: "secret-for-tests-must-be-at-least-32-bytes",
+      // Journeys change exams directly in D1 and expect to see it at once.
+      EXAM_CACHE_MS: "0",
     },
   });
   db = await mf.getD1Database("DB");
@@ -299,6 +301,22 @@ describe.sequential("real Worker / D1 journeys", () => {
       ).status,
     ).toBe(404);
     expect((await call("/api/exam")).status).toBe(404);
+  });
+  it("finds a student's history and overdue attempts through their own indexes", async () => {
+    const plan = async (sql: string) =>
+      (await db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all<any>()).results
+        .map((r) => r.detail)
+        .join(" | ");
+    expect(
+      await plan(
+        "SELECT * FROM attempts WHERE exam_id='first' AND participant_id='guest:a' AND preview=0 AND sequence>0 ORDER BY sequence LIMIT 501",
+      ),
+    ).toContain("attempts_participant_preview");
+    expect(
+      await plan(
+        "UPDATE attempts SET status='expired' WHERE exam_id='first' AND status='running' AND expires_at<=1",
+      ),
+    ).toContain("attempts_running");
   });
   it("shows each device an identity submitted from, with the network the server saw", async () => {
     const submit = async (deviceId: string, ip: string, agent: string) => {

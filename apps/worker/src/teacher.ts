@@ -20,11 +20,12 @@ import {
   page,
   inputKey,
   revisionManifest,
+  forgetExam,
   type AppContext,
   type Env,
   type ExamRow,
 } from "./core.js";
-import { summary, purgePreview, type AttemptRow } from "./attempts.js";
+import { summaries, purgePreview, type AttemptRow } from "./attempts.js";
 import { analysis } from "./monitor.js";
 /** Records a teacher action made from the CLI or the workspace. */
 async function teacherEvent(
@@ -145,6 +146,7 @@ teachers.post("/api/teacher/exams/:eid/revisions", async (c) => {
       .bind(e.id, bundle.revision, key, JSON.stringify(stored), Date.now())
       .run();
   }
+  forgetExam(e.id);
   await teacherEvent(c, "exam_revision_uploaded", {
     exam_id: e.id,
     created_exam: !prior,
@@ -225,6 +227,7 @@ teachers.post(
       .first();
     if (!published)
       fail("Exam changed; review the current revision before publishing", 409);
+    forgetExam(e.id);
     await teacherEvent(c, "exam_published", {
       exam_id: e.id,
       first_publish: !previous,
@@ -341,6 +344,7 @@ teachers.patch("/api/teacher/exams/:eid", async (c) => {
       e.owner_id,
     )
     .run();
+  forgetExam(e.id);
   return c.json(next);
 });
 teachers.get("/api/teacher/exams/:eid/submissions", async (c) => {
@@ -361,9 +365,10 @@ teachers.get("/api/teacher/exams/:eid/submissions", async (c) => {
     .bind(e.id, after, snapshot, limit + 1)
     .all<AttemptRow>();
   const selected = rows.results.slice(0, limit);
+  const summarized = await summaries(c.env.DB, selected);
   const submissions = await Promise.all(
-    selected.map(async (a) => ({
-      ...(await summary(c.env.DB, a)),
+    selected.map(async (a, i) => ({
+      ...summarized[i],
       sequence: a.sequence,
       code: a.code,
       codeSha256: a.code_sha256,
