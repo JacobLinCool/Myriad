@@ -76,6 +76,9 @@
       >{/if}
   </header>
   <div class="editor-body">
+    <span class="visually-hidden" id="editor-keys"
+      >Tab 縮排；先按 Esc 再按 Tab 可離開編輯器。</span
+    >
     <CCodeEditor
       bind:this={editor}
       documentKey={JSON.stringify([
@@ -84,6 +87,7 @@
         session.problem?.id,
       ])}
       bind:value={session.code}
+      describedBy="editor-keys"
       onchange={session.save}
     />
   </div>

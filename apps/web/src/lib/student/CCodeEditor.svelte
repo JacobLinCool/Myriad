@@ -3,12 +3,18 @@
   import { EditorState, Prec, Annotation } from "@codemirror/state";
   import {
     EditorView,
+    drawSelection,
     keymap,
     lineNumbers,
     highlightActiveLine,
     highlightActiveLineGutter,
   } from "@codemirror/view";
-  import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+  import {
+    defaultKeymap,
+    history,
+    historyKeymap,
+    indentWithTab,
+  } from "@codemirror/commands";
   import { cpp } from "@codemirror/lang-cpp";
   import {
     bracketMatching,
@@ -16,6 +22,7 @@
     indentUnit,
   } from "@codemirror/language";
   import {
+    acceptCompletion,
     autocompletion,
     closeBrackets,
     closeBracketsKeymap,
@@ -28,6 +35,8 @@
     value: string;
     documentKey: string;
     fontSize?: number;
+    /** Id of text explaining the editor's keys to screen readers, such as leaving it with Tab. */
+    describedBy?: string;
     onchange?: (val: string) => void;
   }
 
@@ -35,6 +44,7 @@
     value = $bindable(),
     documentKey,
     fontSize = 14,
+    describedBy,
     onchange,
   }: Props = $props();
 
@@ -48,6 +58,9 @@
       doc: value,
       extensions: [
         lineNumbers(),
+        // The editor draws its own cursor above the text, so the matching
+        // bracket's outline cannot cover the browser's thin caret.
+        drawSelection(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
         cpp(),
@@ -58,7 +71,8 @@
         autocompletion({ override: cCompletions, icons: false }),
         oneDark,
         history(),
-        // Tab stays free for focus movement; Enter accepts a completion.
+        // Tab accepts an open completion, otherwise indents; Shift+Tab outdents.
+        // Esc then Tab leaves the editor, so the keyboard is never trapped.
         // Shift+Alt+F by physical key: on macOS, Option turns the letter into another character.
         EditorView.domEventHandlers({
           keydown(event) {
@@ -78,10 +92,15 @@
         keymap.of([
           ...closeBracketsKeymap,
           ...completionKeymap,
+          { key: "Tab", run: acceptCompletion },
+          indentWithTab,
           ...defaultKeymap,
           ...historyKeymap,
         ]),
-        EditorView.contentAttributes.of({ "aria-label": "C 程式碼編輯器" }),
+        EditorView.contentAttributes.of({
+          "aria-label": "C 程式碼編輯器",
+          ...(describedBy ? { "aria-describedby": describedBy } : {}),
+        }),
         EditorView.updateListener.of((update) => {
           if (
             update.docChanged &&
