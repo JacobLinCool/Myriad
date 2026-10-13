@@ -81,7 +81,7 @@ export async function deviceLinks(db: D1Database, examId: string) {
   const [devices, identities] = await db.batch([
     db
       .prepare(
-        `SELECT device_id AS deviceId,student_id AS studentId,identity_kind AS identityKind,COUNT(*) AS submissions,MIN(created_at) AS firstSeenAt,MAX(created_at) AS lastSeenAt,GROUP_CONCAT(DISTINCT client_ip) AS ips FROM attempts WHERE exam_id=? AND preview=0 AND device_id IN (SELECT device_id FROM attempts WHERE exam_id=? AND preview=0 GROUP BY device_id HAVING COUNT(DISTINCT participant_id)>1) GROUP BY device_id,participant_id ORDER BY device_id,student_id`,
+        `SELECT device_id AS deviceId,student_id AS studentId,identity_kind AS identityKind,COUNT(*) AS submissions,MIN(created_at) AS firstSeenAt,MAX(created_at) AS lastSeenAt,GROUP_CONCAT(DISTINCT client_ip) AS ips,COUNT(DISTINCT user_agent) AS userAgents,MAX(user_agent) AS userAgent FROM attempts WHERE exam_id=? AND preview=0 AND device_id IN (SELECT device_id FROM attempts WHERE exam_id=? AND preview=0 GROUP BY device_id HAVING COUNT(DISTINCT participant_id)>1) GROUP BY device_id,participant_id ORDER BY device_id,student_id`,
       )
       .bind(examId, examId),
     db

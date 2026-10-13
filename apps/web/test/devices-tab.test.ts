@@ -14,7 +14,7 @@ const links: DeviceLinks = {
     {
       studentId: "110550001",
       identityKind: "nycu",
-      deviceId: "device-a",
+      deviceId: "a1234567-1234-4123-8123-123456789abc",
       submissions: 2,
       firstSeenAt: 1,
       lastSeenAt: 2,
@@ -25,7 +25,7 @@ const links: DeviceLinks = {
     {
       studentId: "110550001",
       identityKind: "nycu",
-      deviceId: "device-b",
+      deviceId: "b1234567-1234-4123-8123-123456789abc",
       submissions: 1,
       firstSeenAt: 3,
       lastSeenAt: 3,
@@ -50,10 +50,15 @@ it("loads device links and performance separately, keeping identities out of rec
       detail: { id: "e" } as ExamDetail,
     },
   });
-  const table = (await screen.findByText("device-b")).closest("table")!;
+  const table = (await screen.findByText("b1234567")).closest("table")!;
   expect(table.closest(".ph-no-capture")).not.toBeNull();
-  expect(table.textContent).toContain("203.0.113.1,203.0.113.2");
-  expect(table.textContent).toContain("Firefox/140（另有 1 種瀏覽器）");
+  expect(screen.getByText("203.0.113.1")).toBeTruthy();
+  expect(screen.getByText("203.0.113.2")).toBeTruthy();
+  const device = screen.getByText("b1234567").closest("details")!;
+  expect(device.open).toBe(false);
+  expect(device.textContent).toContain("b1234567-1234-4123-8123-123456789abc");
+  expect(table.textContent).toContain("Firefox/140");
+  expect(table.textContent).toContain("共 2 種 User-Agent，顯示其中一種");
   expect(table.textContent).toContain("—");
   await waitFor(() =>
     expect(

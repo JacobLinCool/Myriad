@@ -319,7 +319,12 @@ describe.sequential("real Worker / D1 journeys", () => {
     ).toContain("attempts_running");
   });
   it("shows each device an identity submitted from, with the network the server saw", async () => {
-    const submit = async (deviceId: string, ip: string, agent: string) => {
+    const submit = async (
+      deviceId: string,
+      ip: string,
+      agent: string,
+      student = "roaming",
+    ) => {
       // Successive submissions from one identity wait out the cooldown.
       await db.prepare("DELETE FROM submission_cooldowns").run();
       const response = await mf.dispatchFetch(
@@ -331,7 +336,7 @@ describe.sequential("real Worker / D1 journeys", () => {
             "CF-Connecting-IP": ip,
             "User-Agent": agent,
           },
-          body: JSON.stringify({ ...request("roaming"), deviceId }),
+          body: JSON.stringify({ ...request(student), deviceId }),
         },
       );
       expect(response.status).toBe(201);
@@ -340,6 +345,7 @@ describe.sequential("real Worker / D1 journeys", () => {
     await submit(laptop, "203.0.113.1", "Laptop/1");
     await submit(laptop, "203.0.113.2", "Laptop/1");
     await submit(phone, "198.51.100.7", "Phone/2");
+    await submit(laptop, "203.0.113.1", "Laptop/1", "shared-device");
     const analysis = (await (
       await call(
         "/api/teacher/exams/first/analysis",
@@ -348,6 +354,17 @@ describe.sequential("real Worker / D1 journeys", () => {
         teacherToken,
       )
     ).json()) as any;
+    expect(analysis.devices).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          deviceId: laptop,
+          studentId: "shared-device",
+          userAgent: "Laptop/1",
+          userAgents: 1,
+          ips: "203.0.113.1",
+        }),
+      ]),
+    );
     const rows = analysis.identities.filter(
       (r: any) => r.studentId === "roaming",
     );

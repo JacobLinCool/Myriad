@@ -2,7 +2,12 @@
   import { api } from "../api";
   import { date } from "../format";
   import type { createTeacherSession } from "../state/teacher.svelte";
-  import type { DeviceLinks, ExamDetail, Performance } from "./data";
+  import type {
+    DeviceLink,
+    DeviceLinks,
+    ExamDetail,
+    Performance,
+  } from "./data";
   import { resource } from "./resource.svelte";
   import Updated from "./Updated.svelte";
   let {
@@ -44,6 +49,53 @@
       : `${date(d.firstSeenAt)} – ${date(d.lastSeenAt)}`;
 </script>
 
+{#snippet deviceTable(rows: DeviceLink[])}
+  <div class="table-scroll ph-no-capture">
+    <table>
+      <thead
+        ><tr>
+          <th>學號</th><th>裝置</th><th>來源 IP</th><th>User-Agent</th><th
+            >提交數</th
+          ><th>提交時間</th>
+        </tr></thead
+      >
+      <tbody
+        >{#each rows as d}
+          <tr>
+            <td>{d.studentId} · {identityLabel(d.identityKind)}</td>
+            <td
+              ><details class="device-id">
+                <summary aria-label={`查看完整裝置 ID：${d.deviceId}`}
+                  ><code>{d.deviceId.slice(0, 8)}</code></summary
+                >
+                <code class="full-id">{d.deviceId}</code>
+              </details></td
+            >
+            <td
+              >{#if d.ips}{#each d.ips.split(",") as ip}<code class="ip"
+                    >{ip}</code
+                  >{/each}{:else}—{/if}</td
+            >
+            <td
+              >{#if d.userAgent}
+                <details class="user-agent">
+                  <summary aria-label="展開或收合完整 User-Agent"
+                    ><span>{d.userAgent}</span></summary
+                  >
+                </details>
+                {#if d.userAgents > 1}<small
+                    >共 {d.userAgents} 種 User-Agent，顯示其中一種</small
+                  >{/if}
+              {:else}—{/if}</td
+            >
+            <td>{d.submissions}</td><td>{span(d)}</td>
+          </tr>
+        {/each}</tbody
+      >
+    </table>
+  </div>
+{/snippet}
+
 <section aria-labelledby="devices-title" aria-busy={links.loading}>
   <header class="section-heading">
     <h2 id="devices-title">裝置關聯</h2>
@@ -58,24 +110,7 @@
   {#if links.error}<p class="error" role="alert">{links.error}</p>{/if}
   {#if links.data}
     <h3>同裝置的不同身分</h3>
-    <div class="table-scroll ph-no-capture">
-      <table>
-        <thead
-          ><tr
-            ><th>裝置</th><th>學號</th><th>提交數</th><th>提交時間</th><th
-              >來源 IP</th
-            ></tr
-          ></thead
-        ><tbody
-          >{#each links.data.devices as d}<tr
-              ><td><code>{d.deviceId}</code></td><td
-                >{d.studentId} · {identityLabel(d.identityKind)}</td
-              ><td>{d.submissions}</td><td>{span(d)}</td><td>{d.ips ?? "—"}</td
-              ></tr
-            >{/each}</tbody
-        >
-      </table>
-    </div>
+    {@render deviceTable(links.data.devices)}
     {#if !links.data.devices.length}<p class="muted">
         同一裝置以多個學號提交時，關聯紀錄會顯示在這裡。
       </p>{/if}
@@ -84,28 +119,7 @@
       裝置以瀏覽器儲存區識別，換瀏覽器、無痕視窗或清除資料也會成為新裝置；請搭配來源
       IP 與瀏覽器判斷。
     </p>
-    <div class="table-scroll ph-no-capture">
-      <table>
-        <thead
-          ><tr
-            ><th>學號</th><th>裝置</th><th>提交數</th><th>提交時間</th><th
-              >來源 IP</th
-            ></tr
-          ></thead
-        ><tbody
-          >{#each links.data.identities as d}<tr
-              ><td>{d.studentId} · {identityLabel(d.identityKind)}</td><td
-                ><code>{d.deviceId}</code>{#if d.userAgent}<small
-                    >{d.userAgent}{d.userAgents > 1
-                      ? `（另有 ${d.userAgents - 1} 種瀏覽器）`
-                      : ""}</small
-                  >{/if}</td
-              ><td>{d.submissions}</td><td>{span(d)}</td><td>{d.ips ?? "—"}</td
-              ></tr
-            >{/each}</tbody
-        >
-      </table>
-    </div>
+    {@render deviceTable(links.data.identities)}
     {#if !links.data.identities.length}<p class="muted">
         同一學號從多個裝置提交時，各裝置的紀錄會顯示在這裡。
       </p>{/if}
@@ -171,6 +185,35 @@
     display: block;
     height: 120px;
     margin-top: 16px;
+  }
+  summary {
+    cursor: pointer;
+  }
+  .full-id {
+    display: block;
+    max-width: 16ch;
+    overflow-wrap: anywhere;
+    margin-top: 6px;
+  }
+  .ip {
+    display: block;
+    max-width: 24ch;
+    overflow-wrap: anywhere;
+  }
+  .user-agent {
+    width: 28ch;
+    max-width: 40vw;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  .user-agent:not([open]) summary span {
+    display: -webkit-inline-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    vertical-align: top;
+    max-width: calc(100% - 2ch);
   }
   td small {
     display: block;

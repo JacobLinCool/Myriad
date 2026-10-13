@@ -94,31 +94,24 @@ export interface ProblemSubmissions {
   versions: { version: string | null; submissions: number }[];
   submissions: import("@myriad/shared").MonitoredSubmission[];
 }
+export interface DeviceLink {
+  deviceId: string;
+  studentId: string;
+  identityKind: "guest" | "nycu";
+  submissions: number;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  /** Comma-separated client IPs observed by the server. */
+  ips: string | null;
+  /** Distinct User-Agent strings; `userAgent` is one sample, not necessarily the latest. */
+  userAgents: number;
+  userAgent: string | null;
+}
 export interface DeviceLinks {
   updatedAt: number;
-  devices: {
-    deviceId: string;
-    studentId: string;
-    identityKind: "guest" | "nycu";
-    submissions: number;
-    firstSeenAt: number;
-    lastSeenAt: number;
-    /** Comma-separated client IPs the server saw; null for older submissions. */
-    ips: string | null;
-  }[];
+  devices: DeviceLink[];
   /** Identities that submitted from more than one device, one row per device. */
-  identities: {
-    studentId: string;
-    identityKind: "guest" | "nycu";
-    deviceId: string;
-    submissions: number;
-    firstSeenAt: number;
-    lastSeenAt: number;
-    ips: string | null;
-    /** Distinct user agents on this device; `userAgent` is one of them. */
-    userAgents: number;
-    userAgent: string | null;
-  }[];
+  identities: DeviceLink[];
 }
 export interface Performance {
   updatedAt: number;
