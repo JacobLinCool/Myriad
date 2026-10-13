@@ -153,3 +153,6 @@ dist
 
 # Private deployment backups
 .deployment-backups/
+
+# Exam data exports hold student IDs and source code.
+exports/
