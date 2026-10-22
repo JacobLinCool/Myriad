@@ -15,9 +15,9 @@
   },
   "dependencies": {
     "@myriad/shared": "workspace:*",
-    "@wasm-oj/contracts": "0.2.3",
-    "@wasm-oj/core": "0.2.3",
-    "@wasm-oj/server": "0.2.3",
+    "@wasm-oj/contracts": "0.2.5",
+    "@wasm-oj/core": "0.2.5",
+    "@wasm-oj/server": "0.2.5",
     "@wasm-oj/toolchain-clang": "0.2.0",
     "commander": "^13.1.0",
     "zod": "^3.24.2"
