@@ -1,22 +1,22 @@
-# 透過 Firebase Authentication 使用 Google 登入
+# Google sign-in through Firebase Authentication
 
-Google 登入是可選的服務，學生與管理者都能使用。Myriad 透過 Firebase Authentication 的 REST 授權流程登入，由 Worker 驗證 Firebase ID token，再建立本站 session。未設定 Firebase 時不顯示 Google 登入；現有 NYCU 部署不需新增設定。
+Google sign-in is optional and available to both students and exam managers. Myriad uses Firebase Authentication's REST authorization flow: the Worker verifies the Firebase ID token, then creates a Myriad session. Google sign-in stays hidden when Firebase is not configured. Existing NYCU deployments need no additional settings.
 
-## 設定 Firebase 與 Google
+## Configure Firebase and Google
 
-1. 在 [Firebase Console](https://console.firebase.google.com/) 建立或選擇專案，在 **Authentication → Sign-in method** 啟用 **Google**，設定支援聯絡方式。取得專案 ID 與 Web API key，供下方 Worker 設定使用。
-2. 在 **Authentication → Settings → Authorized domains** 加入 Myriad 的主機名稱，例如 `judge.example.com`。本機測試另加 `localhost`；新專案不會預設允許它。正式與測試環境使用不同專案。[Firebase 設定說明](https://firebase.google.com/docs/auth/faq-and-troubleshooting)
-3. 在 Google provider 的設定中確認使用的 Web OAuth client，前往同一專案的 [Google Cloud Console](https://console.cloud.google.com/) 編輯該 client 的 **Authorized redirect URIs**，加入完整 Myriad callback，例如 `https://judge.example.com/api/auth/google/callback`；測試專案則加入 `http://localhost:8787/api/auth/google/callback`。Firebase provider 保存的 client ID 與 secret 必須對應這個 Web client。
+1. Create or choose a project in the [Firebase Console](https://console.firebase.google.com/). Under **Authentication → Sign-in method**, enable **Google** and set the support contact. Get the project ID and Web API key for the Worker configuration below.
+2. Add your Myriad hostname, such as `judge.example.com`, under **Authentication → Settings → Authorized domains**. Add `localhost` separately for local testing; new projects do not allow it by default. Use separate projects for production and testing. [Firebase configuration guide](https://firebase.google.com/docs/auth/faq-and-troubleshooting)
+3. Find the Web OAuth client used by the Google provider. In the [Google Cloud Console](https://console.cloud.google.com/) for the same project, edit that client's **Authorized redirect URIs** and add the full Myriad callback URL, such as `https://judge.example.com/api/auth/google/callback`. For the test project, add `http://localhost:8787/api/auth/google/callback`. The client ID and secret stored in the Firebase provider must belong to this Web client.
 
-Myriad 將自己的 callback 作為 REST `createAuthUri` 的 `continueUri`，讓 Google 直接回到 Worker，再由 Worker 呼叫 `signInWithIdp` 完成登入。因此必須登錄上述 Myriad callback；Firebase JS SDK 使用的 `/__/auth/handler` 不會替代它。此流程不需 Firebase Hosting、瀏覽器 SDK 或登入代理。[Firebase REST 授權契約](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v1/accounts/createAuthUri)、[Google redirect URI 規則](https://developers.google.com/identity/protocols/oauth2/web-server)
+Myriad passes its own callback as `continueUri` in the REST `createAuthUri` call. Google redirects directly to the Worker, which calls `signInWithIdp` to finish signing in. Register the Myriad callback above; the Firebase JS SDK's `/__/auth/handler` does not replace it. This flow needs no Firebase Hosting, browser SDK, or sign-in proxy. [Firebase REST authorization contract](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v1/accounts/createAuthUri), [Google redirect URI rules](https://developers.google.com/identity/protocols/oauth2/web-server)
 
-Google OAuth consent screen 的 **Audience** 應符合使用對象：公開服務使用 External；Internal 限該組織帳號。對外服務需完成自己的網站、隱私政策與聯絡資料，發布應用程式並完成 Google 要求的驗證。只有基本身分 scopes 時，Google Testing 有 test-user 例外，不能當成本站帳號白名單；Workspace 管理政策仍可能禁止登入。[Google audience 規則](https://support.google.com/cloud/answer/15549945?hl=en)
+Set the Google OAuth consent screen's **Audience** to match your users: External for a public service, or Internal for accounts in that organization only. Public services must provide their own website, privacy policy, and contact information, publish the application, and complete any verification Google requires. With only basic identity scopes, Google Testing has a test-user exception and cannot serve as Myriad's account allowlist. Workspace administrator policies may still block sign-in. [Google audience rules](https://support.google.com/cloud/answer/15549945?hl=en)
 
-Firebase 可能保存 Google profile、email 與登入紀錄。Myriad 不要求額外 Google API scopes，也不將 email 當成權限識別；部署者仍需在隱私說明中交代 Firebase 的資料處理。
+Firebase may store Google profiles, email addresses, and sign-in records. Myriad requests no additional Google API scopes and does not use email as a permission identifier. Deployers must still explain Firebase's data handling in their privacy notice.
 
-## 設定 Worker
+## Configure the Worker
 
-本機編輯被 Git 忽略的 `apps/worker/.dev.vars`：
+For local development, edit the Git-ignored `apps/worker/.dev.vars`:
 
 ```dotenv
 APP_ORIGIN=http://localhost:8787
@@ -24,40 +24,42 @@ FIREBASE_PROJECT_ID=your-firebase-project-id
 FIREBASE_API_KEY=your-firebase-web-api-key
 ```
 
-保留已有的 `ADMIN_TOKEN`、`ATTEMPT_SECRET` 及需要的 NYCU 設定。`APP_ORIGIN` 與兩個 Firebase 設定都非空時，介面顯示 Google 登入，不需另外的 feature flag。成功登入還需要正確的 `APP_ORIGIN`：它必須是單一 origin，不能帶路徑、結尾斜線或 query；正式環境使用 HTTPS，本機只允許 `localhost` 或 `127.0.0.1` 的 HTTP origin。
+Keep the existing `ADMIN_TOKEN`, `ATTEMPT_SECRET`, and any NYCU settings you need. The interface shows Google sign-in when `APP_ORIGIN` and both Firebase settings are nonempty; no separate feature flag is needed. Successful sign-in also requires a valid `APP_ORIGIN`: a single origin with no path, trailing slash, or query. Use HTTPS in production. For local development, HTTP origins are accepted only for `localhost` or `127.0.0.1`.
 
-正式環境在自己的 `apps/worker/wrangler.production.jsonc` 設定 `vars.FIREBASE_PROJECT_ID` 和 `vars.FIREBASE_API_KEY`。API key 用來識別 Firebase 專案，不是 Google client secret 或 service-account private key；請使用允許伺服器呼叫 Identity Toolkit API 的 key，瀏覽器 HTTP referrer 限制不適用於這個 Worker 流程。Google OAuth client secret 由 Firebase provider 管理，不需要放進 Worker。[Firebase API key 管理](https://firebase.google.com/docs/projects/api-keys)
+In production, set `vars.FIREBASE_PROJECT_ID` and `vars.FIREBASE_API_KEY` in your own `apps/worker/wrangler.production.jsonc`. The API key identifies the Firebase project; it is not a Google client secret or service-account private key. Use a key that allows server calls to the Identity Toolkit API. Browser HTTP referrer restrictions are not suitable for this Worker flow. Firebase manages the Google OAuth client secret in its provider configuration, so the Worker does not need it. [Firebase API key management](https://firebase.google.com/docs/projects/api-keys)
 
-升級至此版本時，先備份並套用 `0014_auth_providers.sql`，再同步更新 Worker 與前端，流程見 [部署指南](deployment.md)。完成版本升級後，登入選項從 Worker 取得，不需為啟用 Google 再次建置前端，也不需修改 CSP 或跨來源隔離標頭。
+When upgrading to this version, back up the database and apply `0014_auth_providers.sql` before updating the Worker and frontend together. See the [deployment guide](deployment.md). After the upgrade, the frontend reads sign-in options from the Worker. Enabling Google requires no further frontend build or changes to CSP or cross-origin isolation headers.
 
-本機從 `APP_ORIGIN` 的 Worker 網址驗收，預設為 `http://localhost:8787`。Vite 的 `http://localhost:5173` 是不同 origin，不可拿來代替已註冊的 callback。此整合使用正式 Firebase REST endpoints，沒有 Authentication Emulator 切換模式；本機驗收請使用獨立的 Firebase 測試專案。
+Verify local sign-in from the Worker URL specified by `APP_ORIGIN`, which defaults to `http://localhost:8787`. Vite's `http://localhost:5173` is a different origin and cannot replace the registered callback. This integration uses the production Firebase REST endpoints and has no Authentication Emulator mode. Use a separate Firebase test project for local verification.
 
-## 平台管理員與出題者
+## Platform administrators and exam authors
 
-Google 登入只驗證帳號，不會自動授予建立考試或管理權限。Myriad 帳號鍵是 `(provider, subject)`：provider 為 `google`，subject 取自已驗證 Firebase ID token 的 `firebase.identities["google.com"]`，即 Google 的固定帳號識別。**Firebase Console 顯示的 UID，以及 Firebase token 的 `sub`，是另一個識別，不可填入 Myriad 的 Google 權限設定。** [Firebase 身分欄位說明](https://firebase.google.com/docs/reference/rules/rules.firestore.Request#auth)
+Google sign-in verifies an account; it does not automatically grant exam creation or management permissions. Myriad identifies accounts by `(provider, subject)`. The provider is `google`, and the subject comes from `firebase.identities["google.com"]` in the verified Firebase ID token: Google's stable account identifier. **The UID shown in Firebase Console and the Firebase token's `sub` are a different identifier. Do not use them in Myriad's Google permission settings.** [Firebase identity fields](https://firebase.google.com/docs/reference/rules/rules.firestore.Request#auth)
 
-先使用 Google 登入，再從管理工作台「帳號與權限」取得自己的帳號識別。同一瀏覽器開啟 `/api/auth/session` 也可查看：`account.kind` 為 `google`，`account.label` 就是 subject；`account.displayName` 只是顯示名稱。部署者用 subject 設定 `ADMIN_IDENTITIES`，例如：
+Sign in with Google, then find your account identifier under **Account and permissions** in the management workspace. You can also open `/api/auth/session` in the same browser. There, `account.kind` is `google`, `account.label` is the subject, and `account.displayName` is only the display name. The deployer uses the subject in `ADMIN_IDENTITIES`, for example:
 
 ```dotenv
 ADMIN_IDENTITIES=[{"provider":"google","subject":"123456789012345678901"}]
 ```
 
-上例是示意 ID，必須換成自己的值。可在同一清單加入 NYCU 管理員。更新 Worker 設定後，平台管理員登入 `/teacher` 的「帳號與權限」，授予自己或其他出題者建立考試許可；平台管理員身分本身不等於建立許可。
+Replace this example ID with your own value. You can include NYCU administrators in the same list. After updating the Worker configuration, sign in at `/teacher` as a platform administrator. Use **Account and permissions** to grant exam creation permission to yourself or other exam authors. Platform administrator status alone does not grant creation permission.
 
-CLI 的授權與邀請命令使用 `--provider google --subject GOOGLE_SUB`。出題者可在工作台建立個人 CLI 憑證，流程與 NYCU 相同，見 [管理者手冊](agent-workflow.md#建立許可與考試協作)。email、姓名與 Firebase UID 都不能代替 Google subject；Myriad 不因同名或相同 email 連結 NYCU、Google 或訪客帳號。
+CLI grant and invitation commands use `--provider google --subject GOOGLE_SUB`. Exam authors can create personal CLI credentials in the workspace using the same flow as NYCU users; see the [manager guide](agent-workflow.md#exam-creation-permission-and-collaboration). Email addresses, names, and Firebase UIDs cannot replace the Google subject. Myriad does not link NYCU, Google, or guest accounts by matching names or email addresses.
 
-## Session、停用與驗收
+## Sessions, disabling sign-in, and verification
 
-登入使用完整頁面重新導向。Worker 將一次性的登入 cookie 與 Firebase 回傳的 provider state、session ID 及 context 綁定，callback 再透過 [`signInWithIdp`](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v1/accounts/signInWithIdp) 完成登入。Worker 驗證 Firebase token 簽章、專案 issuer／audience、有效期、驗證時間及 Google provider 身分後，建立 Myriad session。[Firebase token 驗證契約](https://firebase.google.com/docs/auth/admin/verify-id-tokens)
+Sign-in uses a full-page redirect. The Worker binds a one-time sign-in cookie to the Firebase authorization state, session ID, and login context. The callback then completes sign-in through [`signInWithIdp`](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v1/accounts/signInWithIdp). Before creating a Myriad session, the Worker verifies the Firebase token's signature, project issuer and audience, validity period, authentication time, and Google provider identity. [Firebase token verification contract](https://firebase.google.com/docs/auth/admin/verify-id-tokens)
 
-Myriad 保存 Google subject、顯示名稱與 session 資料，不保存 Firebase／Google token 或 email。本站 session 使用 24 小時 HttpOnly cookie，資料庫保存 session 雜湊；顯示名稱不影響帳號識別或既有權限。Firebase 專案中的使用者資料由部署者另外管理。
+Myriad stores the Google subject, display name, and session data. It does not store Firebase or Google tokens, or email addresses. Myriad sessions use a 24-hour HttpOnly cookie, with a session hash stored in the database. The display name does not affect account identity or existing permissions. Deployers manage user data in the Firebase project separately.
 
-停用時，清空 Worker 的 `FIREBASE_PROJECT_ID` 或 `FIREBASE_API_KEY` 後更新部署；登入按鈕隱藏，新的 Google 登入請求被拒絕。已簽發的 Myriad session 仍可使用至登出或 24 小時到期，既有個人 CLI 憑證及帳號權限也不會因此撤銷。在 Firebase 停用或刪除使用者、撤銷 token，都不會自動清除本站已簽發的 session 或 CLI 憑證；撤銷 Myriad 權限或 CLI 憑證需另行操作。
+To disable Google sign-in, clear either `FIREBASE_PROJECT_ID` or `FIREBASE_API_KEY` in the Worker configuration and redeploy. The sign-in button disappears, and new Google sign-in requests are rejected.
 
-自動測試以隔離的 Firebase REST 回應和簽章金鑰驗證協定與身分隔離，不代表已驗收自己的 Firebase 或 Google Cloud 設定。正式開放前，以實際 Google 帳號確認：
+Existing Myriad sessions remain valid until logout or their 24-hour expiry. Personal CLI credentials and account permissions are not revoked. Disabling or deleting a Firebase user, or revoking Firebase tokens, does not automatically clear Myriad sessions or CLI credentials that have already been issued. Revoke Myriad permissions or CLI credentials separately.
 
-1. Google 按鈕只在設定完整時出現；僅 NYCU 的部署維持原有登入選項。
-2. 登入及取消授權都返回正確 origin 與原頁面，重新整理後 session 保留，登出後清除；Firebase Authentication 中可看到對應的測試使用者。
-3. 帳號資訊顯示正確 Google subject；姓名相同的 Google、NYCU 與訪客不共用草稿、提交或權限。
-4. Google 平台管理員可以授予建立許可，出題者可建立 CLI 憑證、發布測試考試及邀請共同管理者；一般登入者沒有這些權限。
-5. 停用 Google 後不再接受新的 Google 登入，其他已啟用服務仍能使用。
+Automated tests use isolated Firebase REST responses and signing keys to verify the protocol and identity isolation. They do not verify your Firebase or Google Cloud configuration. Before opening the service to users, check the following with a real Google account:
+
+1. The Google button appears only when all required settings are present. Deployments that use only NYCU keep their existing sign-in options.
+2. Both successful sign-in and cancelled authorization return to the correct origin and original page. The session survives a refresh and is cleared on logout. The corresponding test user appears in Firebase Authentication.
+3. Account information shows the correct Google subject. Google, NYCU, and guest accounts with matching names do not share drafts, submissions, or permissions.
+4. A Google platform administrator can grant creation permission. Exam authors can create CLI credentials, publish a test exam, and invite co-managers. Ordinary signed-in users do not have these permissions.
+5. Once Google is disabled, new Google sign-ins are rejected and other enabled providers still work.

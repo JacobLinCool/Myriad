@@ -1,18 +1,18 @@
-# 部署至 Cloudflare
+# Deploy to Cloudflare
 
-本文件適用於自己的 Cloudflare 帳戶與網域。本機開發見 [README](../README.md)；登入服務可選 [NYCU OAuth](nycu-oauth.md)、[Firebase Authentication 的 Google 登入](google-oauth.md) 或同時啟用。正式服務需要 Workers、D1、R2 以及設定完成的登入服務，選用 OpenAI 與 PostHog 則另需各自帳戶。
+This guide uses your own Cloudflare account and domain. For local development, see the [README](../README.md). You can enable [NYCU OAuth](nycu-oauth.md), [Google sign-in through Firebase Authentication](google-oauth.md), or both. Production requires Workers, D1, R2, and a configured sign-in provider. Optional OpenAI and PostHog integrations need accounts with those services.
 
-## 部署設定與資源
+## Deployment configuration and resources
 
-`apps/worker/wrangler.jsonc` 是本機預設，不含正式帳戶或網域。從根目錄建立自己的部署設定：
+`apps/worker/wrangler.jsonc` contains local defaults, with no production account or domain. Set up your own deployment configuration from the repository root:
 
 ```sh
 cp apps/worker/wrangler.production.example.jsonc apps/worker/wrangler.production.jsonc
 ```
 
-`wrangler.production.jsonc` 被 Git 忽略。填入自己的 Worker 名稱、`account_id`、網域 `routes[].pattern` 與 `vars.APP_ORIGIN`。範本使用 Cloudflare custom domain，因此該網域必須位於可管理的 Cloudflare zone。`APP_ORIGIN` 使用完整 HTTPS origin，不含結尾斜線、路徑或 query。
+`wrangler.production.jsonc` is Git-ignored. Fill in your Worker name, `account_id`, domain in `routes[].pattern`, and `vars.APP_ORIGIN`. The template uses a Cloudflare custom domain, so the domain must belong to a Cloudflare zone you can manage. Set `APP_ORIGIN` to a full HTTPS origin without a trailing slash, path, or query.
 
-先登入 Cloudflare，或在受保護的執行環境設定具所需權限的 `CLOUDFLARE_API_TOKEN`。在 `apps/worker` 建立資源：
+Sign in to Cloudflare, or set a `CLOUDFLARE_API_TOKEN` with the required permissions in a protected environment. Create resources from `apps/worker`:
 
 ```sh
 cd apps/worker
@@ -21,45 +21,45 @@ pnpm exec wrangler d1 create myriad_d1 --config wrangler.production.jsonc
 pnpm exec wrangler r2 bucket create myriad-bucket --config wrangler.production.jsonc
 ```
 
-將建立結果填回設定：`d1_databases` 的 `database_name`／`database_id`，以及 `r2_buckets` 的 `bucket_name`。保留程式使用的 binding 名稱 `DB`、`BUCKET`、`ASSETS`。若資源已存在，直接填入現有資源資訊。
+Copy the resource details into the configuration: `database_name` and `database_id` under `d1_databases`, and `bucket_name` under `r2_buckets`. Keep the binding names used by the code: `DB`, `BUCKET`, and `ASSETS`. If resources already exist, use their details instead.
 
-在 `vars` 設定需要的登入服務：NYCU 使用 `NYCU_CLIENT_ID` 並搭配下方的 secret；Google 使用 `FIREBASE_PROJECT_ID` 和 `FIREBASE_API_KEY`。也設定平台管理員 `ADMIN_IDENTITIES`，例如 `[{"provider":"nycu","subject":"your-username"}]` 的 JSON 字串。Google 帳號使用 `provider: "google"` 和 Myriad 顯示的 Google subject，不使用 Firebase UID，取得方式見 [Google 登入設定](google-oauth.md#平台管理員與出題者)。登入服務的設定及 `APP_ORIGIN` 都非空時才顯示對應選項，實際登入時會驗證 origin；將 Firebase 設定留空可維持既有 NYCU 部署。
+Configure the sign-in providers you need in `vars`. NYCU uses `NYCU_CLIENT_ID` and the secret set below. Google uses `FIREBASE_PROJECT_ID` and `FIREBASE_API_KEY`. Set platform administrators in `ADMIN_IDENTITIES`, a JSON string such as `[{"provider":"nycu","subject":"your-username"}]`. For Google, use `provider: "google"` and the Google subject shown in Myriad, not the Firebase UID. See [Google sign-in setup](google-oauth.md#platform-administrators-and-exam-authors) to find it. Each sign-in option appears only when that provider's settings and `APP_ORIGIN` are nonempty; the origin is checked during login. Leave Firebase settings empty for an NYCU-only deployment.
 
-先在對應登入服務註冊完整 callback：NYCU 為 `APP_ORIGIN` 加上 `/api/auth/nycu/callback`，Google 為 `APP_ORIGIN` 加上 `/api/auth/google/callback`，後者登錄在 Firebase Google provider 使用的 Web OAuth client。Firebase 也需啟用 Google provider 並允許本站網域。完成版本升級與服務設定後，啟用方式只依 Worker 設定，不需重新建置前端。
+Register the full callback with each provider first. For NYCU, use `APP_ORIGIN` plus `/api/auth/nycu/callback`. For Google, use `APP_ORIGIN` plus `/api/auth/google/callback`, registered on the Web OAuth client used by Firebase's Google provider. Enable the Google provider in Firebase and authorize your domain there as well. Once the application upgrade and provider setup are complete, enabling sign-in depends only on Worker configuration; the frontend does not need rebuilding.
 
 ## Secrets
 
-仍在 `apps/worker` 執行下列命令，依提示輸入秘密值：
+Still in `apps/worker`, run these commands and enter the secret values when prompted:
 
 ```sh
 pnpm exec wrangler secret put ADMIN_TOKEN --config wrangler.production.jsonc
 pnpm exec wrangler secret put ATTEMPT_SECRET --config wrangler.production.jsonc
 ```
 
-若使用 NYCU，再設定校方 client secret：
+If you use NYCU, also set the university client secret:
 
 ```sh
 pnpm exec wrangler secret put NYCU_CLIENT_SECRET --config wrangler.production.jsonc
 ```
 
-Google OAuth client secret 由 Firebase provider 管理，Worker 不需要它。`FIREBASE_API_KEY` 是 Firebase 專案識別 key，可放在自己的 production `vars`；它不是 service-account private key。
+Firebase's provider manages the Google OAuth client secret; the Worker does not need it. `FIREBASE_API_KEY` identifies the Firebase project and can be stored in your production `vars`. It is not a service-account private key.
 
-`ADMIN_TOKEN` 與 `ATTEMPT_SECRET` 使用不同的高熵隨機值，後者至少 32 字元。`ATTEMPT_SECRET` 在考試期間保持穩定；變更會使既有 attempt 寫入憑證失效。`.dev.vars` 只供本機使用，不會替代正式 Worker secrets。Secret 命令也必須指定 production 設定，避免操作錯誤的 Worker。
+Use different high-entropy random values for `ADMIN_TOKEN` and `ATTEMPT_SECRET`; the latter must be at least 32 characters long. Keep `ATTEMPT_SECRET` the same throughout an exam. Changing it invalidates existing attempt write credentials. `.dev.vars` is for local use only and does not replace production Worker secrets. Always pass the production configuration to secret commands so they target the correct Worker.
 
-| 設定                                       | 用途                                                     |
-| ------------------------------------------ | -------------------------------------------------------- |
-| `APP_ORIGIN`                               | 使用者與 OAuth callback 的同一個正式 HTTPS origin        |
-| `ADMIN_IDENTITIES`                         | 可授予建立考試許可的已驗證 OAuth 帳號清單；預設 `[]`     |
-| `ADMIN_TOKEN`                              | 平台服務憑證，供建立許可與工具鏈管理，不配發給一般出題者 |
-| `ATTEMPT_SECRET`                           | 簽發 attempt 寫入憑證，亦用於分析識別的化名              |
-| `NYCU_CLIENT_ID` / `NYCU_CLIENT_SECRET`    | 選用的校方登入應用程式設定                               |
-| `FIREBASE_PROJECT_ID` / `FIREBASE_API_KEY` | 選用的 Firebase Authentication Google 登入設定           |
-| `OPENAI_API_KEY` / `OPENAI_SEMANTIC_MODEL` | 選用的程式實作要求檢查                                   |
-| `POSTHOG_KEY` / `POSTHOG_HOST`             | 選用的 Worker 分析事件及瀏覽器分析代理                   |
+| Setting                                    | Purpose                                                                                                              |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `APP_ORIGIN`                               | The same production HTTPS origin for users and OAuth callbacks                                                       |
+| `ADMIN_IDENTITIES`                         | Verified OAuth accounts allowed to grant exam-creation permission; defaults to `[]`                                  |
+| `ADMIN_TOKEN`                              | Platform service credential for creation grants and toolchain management; do not distribute to ordinary exam authors |
+| `ATTEMPT_SECRET`                           | Issues attempt write credentials and pseudonymizes analytics identifiers                                             |
+| `NYCU_CLIENT_ID` / `NYCU_CLIENT_SECRET`    | Optional university sign-in application settings                                                                     |
+| `FIREBASE_PROJECT_ID` / `FIREBASE_API_KEY` | Optional Google sign-in through Firebase Authentication                                                              |
+| `OPENAI_API_KEY` / `OPENAI_SEMANTIC_MODEL` | Optional implementation-requirement checks                                                                           |
+| `POSTHOG_KEY` / `POSTHOG_HOST`             | Optional Worker analytics events and browser analytics proxy                                                         |
 
-## 建置、遷移與部署
+## Build, migrate, and deploy
 
-首次建立空資料庫時可依序套用所有 migrations。升級有既有資料的部署時，先閱讀下方的遷移注意事項並備份資料。
+For a new, empty database, apply all migrations in order. Before upgrading a deployment with existing data, read the migration notes below and back up the data.
 
 ```sh
 pnpm exec wrangler d1 migrations apply DB --remote --config wrangler.production.jsonc
@@ -69,56 +69,56 @@ pnpm --filter=@myriad/worker exec wrangler deploy --dry-run --config wrangler.pr
 pnpm --filter=@myriad/worker deploy
 ```
 
-最後一個命令明確使用 `wrangler.production.jsonc`，將 Worker 與 `apps/web/dist` 一起部署。`--dry-run` 不驗證雲端資源、權限、外部模型或實際 OAuth 登入。
+The last command explicitly uses `wrangler.production.jsonc` and deploys the Worker with `apps/web/dist`. `--dry-run` does not validate cloud resources, permissions, external models, or real OAuth sign-in.
 
-上線後檢查 `/api/health`、首頁及 `crossOriginIsolated`，再完成下列驗收：
+After deployment, check `/api/health`, the home page, and `crossOriginIsolated`, then complete these acceptance checks:
 
-1. 用實際帳號逐一驗收已啟用的登入服務，確認 callback 返回同一正式 origin，未啟用的服務不顯示登入按鈕。
-2. 平台管理員授予出題者建立考試許可；出題者建立個人 CLI 憑證。
-3. 以平台憑證上傳工具鏈，再以出題者憑證發布含合成資料的測試考試。
-4. 確認考前限制、管理者預覽、一般學生編譯與提交、斷線續傳及截止後限制。
-5. 下載提交，以本機 runtime 複判並上傳報告，確認一般學生無法存取管理資料。
+1. Sign in with a real account using each enabled provider. Confirm that the callback returns to the same production origin and disabled providers have no sign-in button.
+2. Have a platform administrator grant exam-creation permission to an author, then have the author create a personal CLI credential.
+3. Upload the toolchain with the platform credential. Then publish an exam containing synthetic data with the author's credential.
+4. Check access restrictions before the exam, manager previews, normal student compilation and submission, interrupted-upload recovery, and restrictions after the deadline.
+5. Download submissions, rejudge them with the local runtime, and upload the report. Confirm that ordinary students cannot access management data.
 
-工具鏈與考試發布命令見 [操作手冊](agent-workflow.md)。測試考試的識別與資料應與正式考試分開。
+See the [operations guide](agent-workflow.md) for toolchain and exam publishing commands. Use separate identifiers and data for test exams and real exams.
 
-## 選用服務
+## Optional services
 
-### OpenAI 實作要求檢查
+### OpenAI implementation checks
 
-只有題目設定 `semanticCheck` 時才使用此服務。加入金鑰：
+This service is used only for problems configured with `semanticCheck`. Add the key:
 
 ```sh
 pnpm --filter=@myriad/worker exec wrangler secret put OPENAI_API_KEY --config wrangler.production.jsonc
 ```
 
-可在 production 設定的 `vars.OPENAI_SEMANTIC_MODEL` 指定支援此程式 Responses API 請求格式的模型；未設定時使用 [`semantic.ts`](../apps/worker/src/semantic.ts) 的預設值。請以自己的 API 帳戶確認模型可用性、額度與實際判定，repository 測試不會呼叫真實模型。未設定金鑰時，伺服器拒絕發布帶有語意要求的題目。
+Set `vars.OPENAI_SEMANTIC_MODEL` in the production configuration to choose a model compatible with the application's Responses API request format. If unset, the default in [`semantic.ts`](../apps/worker/src/semantic.ts) is used. Verify model availability, quota, and actual judgments with your own API account; repository tests do not call a real model. Without an API key, the server rejects publication of problems with semantic requirements.
 
-程式會傳送實作要求與學生程式前 20,000 個 Unicode 字元，不另附身分或測資，請求使用 `store=false`。先向參與者說明資料流；程式內容本身仍可能包含個人資料。模型失敗可重試，語意未通過則使該次得分為零，保留測資結果及原因供管理者檢視。
+Requests send the implementation requirements and the first 20,000 Unicode characters of student code, without separate identifiers or tests, and use `store=false`. Explain this data flow to participants first; source code may itself contain personal data. Model failures can be retried. A failed semantic check makes the attempt's score zero, while keeping test results and reasons for managers to review.
 
 ### PostHog
 
-分析預設停用。要啟用瀏覽器及 Worker 分析：
+Analytics are disabled by default. To enable browser and Worker analytics:
 
-1. 複製 `apps/web/.env.example` 為被忽略的 `apps/web/.env`，設定自己的 `VITE_POSTHOG_KEY`。這是會編入瀏覽器 bundle 的 project key，不能放 personal API key。
-2. 在 Worker 設定相同專案的 `POSTHOG_KEY` 和 ingestion host `POSTHOG_HOST`。預設 host 為 `https://us.i.posthog.com`；使用其他區域時明確設定對應網址。
-3. 重新建置前端並部署，檢查實際事件與 PostHog 的錄影、autocapture 及資料保留設定。
+1. Copy `apps/web/.env.example` to the ignored `apps/web/.env` and set your `VITE_POSTHOG_KEY`. This project key is compiled into the browser bundle; do not use a personal API key.
+2. On the Worker, set `POSTHOG_KEY` for the same project and `POSTHOG_HOST` to its ingestion host. The default host is `https://us.i.posthog.com`; explicitly set the corresponding URL for other regions.
+3. Rebuild the frontend and deploy. Inspect actual events and PostHog's recording, autocapture, and retention settings.
 
-瀏覽器使用同源 `/ingest` 代理；未設定 Worker `POSTHOG_KEY` 時代理不提供服務。瀏覽器與 Worker 的 key 都清空，並重新建置部署，才能停止兩邊的產品分析。這不會刪除已保存的資料，也不會關閉 Myriad 內建的 D1 遙測。資料內容和身分化名邊界見 [架構說明](architecture.md)。
+The browser uses the same-origin `/ingest` proxy, which is unavailable without a Worker `POSTHOG_KEY`. To disable product analytics in both the browser and Worker, clear both keys. Then rebuild and deploy. This does not delete stored data or disable Myriad's built-in D1 telemetry. See the [architecture guide](architecture.md) for data contents and the limits of identity pseudonymization.
 
-## 匯出與既有資料
+## Exports and existing data
 
-管理者日常應使用 CLI `pull` 和管理工作台的匯出功能。需要基礎設施層級分析時，可從 repository 根目錄執行：
+Use CLI `pull` and the dashboard's export features for routine work. For infrastructure-level analysis, run this from the repository root:
 
 ```sh
 pnpm --filter=@myriad/worker export-data --from "2026-01-01T00:00:00+08:00" --to "2026-01-02T00:00:00+08:00" --exam my-exam --skip posthog
 ```
 
-改為自己的時間範圍與考試 ID。匯出程式預設讀取 `apps/worker/wrangler.production.jsonc`，可用 `--config` 指定其他檔案；Cloudflare 讀取需要環境中的 `CLOUDFLARE_API_TOKEN`。若不略過 PostHog，另需 `POSTHOG_PERSONAL_API_KEY` 和 `POSTHOG_PROJECT_ID`，此程式的 `POSTHOG_HOST` 指 PostHog API host（預設 `https://us.posthog.com`），與 Worker ingestion host 不同。
+Replace the time range and exam ID with your own. The export script reads `apps/worker/wrangler.production.jsonc` by default; use `--config` to select another file. Cloudflare reads require `CLOUDFLARE_API_TOKEN` in the environment. Unless you skip PostHog, you also need `POSTHOG_PERSONAL_API_KEY` and `POSTHOG_PROJECT_ID`. For this script, `POSTHOG_HOST` means the PostHog API host, which defaults to `https://us.posthog.com`, not the Worker's ingestion host.
 
-預設輸出至被 Git 忽略的 `exports/`。內容可能包含真實身分、IP、原始碼與分析事件，應存放於受保護的位置。這是分析匯出，不是完整備份／還原工具；備份需同時涵蓋 D1、R2 和所需的部署設定。
+Output goes to the Git-ignored `exports/` directory by default. It may contain real identities, IP addresses, source code, and analytics events, so store it in a protected location. This is an analysis export, not a full backup and restore tool. Backups must cover D1, R2, and the deployment settings needed for recovery.
 
-若從 `0009_exam_permissions.sql` 之前的部署升級，先建立 `migration_teacher_identities(teacher_id, account_id, provider, subject)` 對照表，以人工確認的 OAuth 身分指定舊管理者的目標帳號；`account_id` 必須為保留的舊管理者 ID。缺少對照會使遷移失敗。空資料庫沒有舊管理者，不需對照資料。
+If upgrading from a deployment before `0009_exam_permissions.sql`, first create the mapping table `migration_teacher_identities(teacher_id, account_id, provider, subject)`. Use manually verified OAuth identities to assign each former manager a target account; `account_id` must be the retained legacy manager ID. Missing mappings cause migration failure. An empty database has no former managers and needs no mapping rows.
 
-此遷移保留 ownership、有效憑證、提交與報告，移除舊管理資料表；不依顯示名稱合併帳號。在資料副本演練後，才對正式環境執行。涉及不相容 schema 的切換需暫停請求，可使用 [`maintenance.ts`](../apps/worker/scripts/maintenance.ts) 作為暫時入口，再同時更新 Worker、前端與 CLI。已套用的 migrations 是資料歷史的一部分，不應修改或刪除。
+This migration preserves ownership, valid credentials, submissions, and reports, and removes the old management tables. It does not merge accounts by display name. Rehearse on a copy of the data before running it in production. Pause requests for incompatible schema changes; [`maintenance.ts`](../apps/worker/scripts/maintenance.ts) can serve as a temporary entry point. Update the Worker, frontend, and CLI together. Applied migrations are part of the data history and should not be edited or deleted.
 
-`0014_auth_providers.sql` 將登入 session 改為關聯帳號，並允許 Google 提交身分。即使維持僅 NYCU 的部署，升級程式時仍需套用此遷移。既有 NYCU session、帳號識別及提交保留；進行中的 OAuth 登入 state 會清除，使用者需重新開始登入。這次 schema 切換也需暫停請求、備份資料並同步更新程式，不能讓舊 Worker 繼續操作新 schema。
+`0014_auth_providers.sql` links login sessions to accounts and allows Google submission identities. Apply it when upgrading the application even if the deployment remains NYCU-only. Existing NYCU sessions, account identifiers, and submissions are preserved. Pending OAuth states are cleared, so users must restart any login in progress. This schema change also requires pausing requests, backing up data, and updating the application together. Do not let an old Worker continue using the new schema.

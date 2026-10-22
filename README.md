@@ -10,6 +10,14 @@ The frontend uses Svelte 5 and CodeMirror, with a Traditional Chinese interface.
 
 [Watch the Myriad introduction on YouTube](https://youtu.be/X6Rs7pJLypU)
 
+## Why judge in the browser?
+
+Myriad is intended for supervised programming exams with two assumptions: a controlled environment and a fixed time limit. Students can access the exam service, but cannot freely browse the internet, use phones, communicate with others, or consult AI tools such as ChatGPT. They have to rely on their own reasoning and the code they write. The institution enforces these conditions; Myriad does not provide network lockdown or proctoring.
+
+Under these assumptions, access to the test inputs need not provide a useful shortcut. Exam authors should choose test sets large and varied enough that working out all the answers by hand is impractical within the time limit. A student who can reason through that data may already have much of the understanding needed to write a solution. Deriving the individual answers can also take longer. Our working assumption is that understanding the problem and writing a general solution is a better use of the available time than trying to extract answers from the test data.
+
+We see browser judging as a practical fit for this setting. Students can compile and test their code locally, and the server does not need to execute their programs. This choice depends on the exam environment, the time limit, and the problems chosen. It does not make client-reported verdicts trustworthy. Exam managers still need to rejudge the submitted code locally to verify grades.
+
 ## Features and limits
 
 - Run multiple exams with test-group scoring, starter code, manager previews, and collaborators assigned to individual exams.

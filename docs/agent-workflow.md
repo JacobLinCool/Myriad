@@ -1,37 +1,37 @@
-# 管理者與 Agent 本機操作手冊
+# Local workflow for exam managers and agents
 
-所有題目建置、標準解執行及考後複判都在管理者裝置進行。遠端保存上傳的 bundle、目前生效的版本、學生程式快照、checksum claims 與管理者複判報告。本機題目原始檔仍由管理者自行備份與版本控制。
+Build problems, run reference solutions, and rejudge submissions on the exam manager's device. The remote service stores uploaded bundles, the active revision, student source snapshots, checksum claims, and rejudging reports. Exam managers are responsible for backing up and versioning their local problem source files.
 
-開始前完成 [安裝與本機啟動](../README.md#安裝與本機啟動)，並執行 `pnpm --filter=@myriad/cli runtime:build` 準備原生 runtime。新環境的管理者帳號、建立許可及 CLI 憑證設定見 [NYCU 登入](nycu-oauth.md) 或 [Google 登入](google-oauth.md)。本文件的命令從 repository 根目錄執行，題目目錄放在相鄰的 `../midterm`，避免將正式考題加入公開程式庫。
+First, complete [Install and run locally](../README.md#install-and-run-locally), then run `pnpm --filter=@myriad/cli runtime:build` to prepare the native runtime. For a new environment, see [NYCU sign-in](nycu-oauth.md) or [Google sign-in](google-oauth.md) to set up manager accounts, exam creation permission, and CLI credentials. Run this guide's commands from the repository root. Keep the exam directory next to the repository at `../midterm` so real exam content stays out of the public repository.
 
-## 完整週期
+## The full cycle
 
-1. 平台管理員依 `(provider, subject)` 授予建立考試許可（`permissions grant`）。助教登入管理工作台，在「帳號與權限」建立個人 CLI 憑證。
-2. 管理者與 agent 在本機出題：`init` → 編輯 → `build` → `test`。
-3. `deploy` 上傳整包並立即生效。之後任何時候（包含考試中）都可以修改後重新 `deploy`，以覆蓋方式取代目前版本。
-4. 在 `/teacher` 檢視考試資訊、狀態與每題版本；開啟「以學生視角預覽」實際作答與判題。
-5. 考試資訊（標題、開始／結束時間、考試說明、計分方式）可在 `/teacher` 直接修改並立即生效，例如考試中延長時間。題目內容只能在本機修改後上傳；本機沒有題目目錄時，先 `export` 從網站還原，修改後再 `build`、`deploy`。
-6. 考試中在 `/teacher` 查看提交統計。
-7. 考後 `pull` 下載全部提交，`verify` 在本機複判，必要時 `results upload` 上傳內部報告。
+1. A platform administrator grants exam creation permission to a `(provider, subject)` identity with `permissions grant`. The teaching assistant signs in to the management dashboard and creates a personal CLI credential under Account and permissions.
+2. The exam manager and agent prepare problems locally: `init` → edit → `build` → `test`.
+3. `deploy` uploads the entire bundle to the server and activates it immediately. Edit and deploy again at any time, including during an exam, to replace the active revision.
+4. Open `/teacher` to inspect exam information, status, and problem versions. Use Preview as a student to try solving and judging problems.
+5. Edit the exam title, start and end times, instructions, and scoring policy directly in `/teacher`. Changes take effect immediately, so you can extend an exam while it is running. Edit problem content locally and upload it. If you do not have the local problem directory, use `export` to restore it from the site, then edit, `build`, and `deploy`.
+6. During the exam, monitor submission statistics in `/teacher`.
+7. After the exam, use `pull` to download all submissions. Use `verify` to rejudge them locally, then `results upload` to upload an internal report if needed.
 
-學生端：考前只看得到考試說明；開放期間看得到題目並提交；結束後只看到結束提示，題目與測資不再提供。
+Students can see only the exam instructions before the exam starts. While it is open, they can read problems and submit solutions. After it ends, they see an ended notice; problems and test inputs are no longer available.
 
-## 命令契約
+## Command contract
 
-從 repository 根目錄執行 `node packages/cli/bin/myriad.js`。每個命令支援 `--json --non-interactive`，沒有互動提問。成功輸出 `{ "ok": true, "data": ... }`；錯誤輸出 `{ "ok": false, "error": { "message": ... } }` 至 stderr，exit code 為 1。`test` 有未通過的測試時 exit code 為 1，仍輸出逐筆測試資料。參數解析錯誤另含 `error.code`；`--help` 是一般說明文字。
+Run `node packages/cli/bin/myriad.js` from the repository root. Every command supports `--json --non-interactive` and runs without interactive prompts. Success produces `{ "ok": true, "data": ... }`. Errors produce `{ "ok": false, "error": { "message": ... } }` on stderr and exit with code 1. If any test fails, `test` also exits with code 1 but still returns per-test results. Argument parsing errors include `error.code`; `--help` returns plain help text.
 
-- 管理者：設定 `MYRIAD_TEACHER_TOKEN`，或每次提供 `--token-file /secure/path/token`。
-- 平台管理員命令：設定 `MYRIAD_ADMIN_TOKEN`，或提供平台管理員憑證檔。
-- 遠端命令必須明確提供 `--remote https://your-judge.example`。
-- 憑證不放在網址或題目 bundle。agent 日誌不得輸出環境變數或憑證檔內容。
+- For exam manager commands, set `MYRIAD_TEACHER_TOKEN` or pass `--token-file /secure/path/token` each time.
+- For platform administrator commands, set `MYRIAD_ADMIN_TOKEN` or supply a file with a platform administrator credential.
+- Remote commands require an explicit `--remote https://your-judge.example`.
+- Keep credentials out of URLs and problem bundles. Agent logs must never print environment variables or credential file contents.
 
-## 建立、設計與驗證
+## Create, design, and validate
 
 ```sh
 node packages/cli/bin/myriad.js --json init ../midterm
 ```
 
-產生結構：
+This creates:
 
 ```text
 midterm/
@@ -43,22 +43,22 @@ midterm/
     tests/01.in
 ```
 
-`exam.json`：`id`、`title`、`startsAt`、`endsAt`（Unix 毫秒）、`rules`、`policy`（`best`／`last`） 與獨立隨機 `salt`（至少 16 字元）。ID 使用英數、連字號、底線，最長 64 字元。`init` 預設一天後開始，編輯後確認時區與起訖時間。
+`exam.json` contains `id`, `title`, `startsAt`, `endsAt` (Unix milliseconds), `rules`, `policy` (`best` or `last`), and an independently generated random `salt` of at least 16 characters. IDs may contain letters, digits, hyphens, and underscores, up to 64 characters. By default, `init` sets the start time to one day later. Check the time zone and both timestamps after editing.
 
-每題 `problem.json` 包含 `title`、`order`、`normalize`、`limits`、`groups`、`sampleCases`。題目 ID 為資料夾名稱。`groups[].tests` 明確列出 `tests/` 中的檔名，不猜測其他檔案；每組通過其全部測試才得該組分數。敘述支援 Markdown 與數學式。`solution.c` 為管理者標準解。
+Each `problem.json` contains `title`, `order`, `normalize`, `limits`, `groups`, and `sampleCases`. The folder name is the problem ID. `groups[].tests` explicitly lists filenames in `tests/`; other files are not inferred. A solution earns a group's points only if it passes every test in that group. Statements support Markdown and math. `solution.c` is the exam manager's reference solution.
 
 ```sh
 node packages/cli/bin/myriad.js --json build ../midterm
 node packages/cli/bin/myriad.js --json test ../midterm aplusb ../midterm/problems/aplusb/solution.c
 ```
 
-`build` 執行全部標準解測試與範例，失敗立即退出。成功產生 `.myriad/bundle.json`，包含設定、敘述、完整輸入、測試索引、expected digests、固定工具鏈與本機驗證報告，以 canonical JSON SHA-256 作為 revision（代表「這一次上傳」）。歷史 bundle 保存在 `.myriad/bundles/<revision>.json`；失敗的重建不留下可直接部署的 current bundle。
+`build` runs the reference solutions against all tests and samples, stopping immediately on failure. On success, it writes `.myriad/bundle.json` with the configuration, statements, complete inputs, test index, expected digests, pinned toolchain, and local validation report. The canonical JSON SHA-256 is its revision, identifying that upload. Historical bundles are saved at `.myriad/bundles/<revision>.json`. If a rebuild fails, there is no current bundle to deploy.
 
-`build` 另為每題計算 `version`：工具鏈、限制、輸出比對方式、子任務分組、實作要求，以及每筆測資輸入與預期輸出摘要的 SHA-256。題敘、標題與範例不影響版本，所以修正錯字不會打斷學生；測資、預期輸出、限制、分組或實作要求改變才會產生新版本。每筆提交記錄判題時使用的題目版本。
+`build` also computes each problem's `version`: a SHA-256 covering the toolchain, limits, output comparison rules, subtask groups, implementation requirements, and every test input and expected output digest. Statements, titles, and samples do not affect the version, so fixing a typo does not interrupt students. Changes to test inputs, expected outputs, limits, groups, or implementation requirements produce a new version. Every submission records the problem version used for judging.
 
-`test` 使用 bundle 的完整內容驗證指定解答。來源檔變動不會改變既有 bundle；需要更新發布內容時重新 build。建議保留整個 `.myriad/bundles`，考後必須使用實際已發布版本複判。
+`test` runs a solution against the complete bundle. Editing source files does not change an existing bundle; rebuild when you need to update what is published. Keep the entire `.myriad/bundles` directory. Rejudging after the exam requires the versions that were actually published.
 
-## 發布與重試
+## Publish and retry
 
 ```sh
 node packages/cli/bin/myriad.js --json toolchain push --remote https://your-judge.example
@@ -66,56 +66,60 @@ node packages/cli/bin/myriad.js --json deploy ../midterm --remote https://your-j
 node packages/cli/bin/myriad.js --json status --exam midterm --remote https://your-judge.example
 ```
 
-`deploy` 僅讀取並驗證 bundle，不重新讀取來源測資；先 staging，再以回傳的 `currentRevision` 作為預期版本原子更新；別人已先發布時回傳 409，重新檢視後再發布。失敗不影響目前版本。相同 bundle 重試可重用已保存的內容；中斷時安全重傳同版本。工具鏈相同內容可重送，同一路徑不同內容會拒絕覆寫。建立新考試需有建立許可；既有考試只允許 owner 與受邀共同管理者操作。只有 owner 能增刪共同管理者。共用工具鏈僅限平台管理員上傳。
+`deploy` reads and validates the bundle without rereading the source test files. It stages the bundle, then publishes it atomically using the returned `currentRevision` as the expected revision. If someone else has published first, it returns 409; review the changes before trying again. A failure leaves the active revision intact. Retrying the same bundle reuses stored content, so an interrupted upload can safely be retried with the same revision. Toolchain files can be sent again with identical content, but different content cannot overwrite the same path.
 
-`deploy` 隨時可執行，包含考試進行中，以覆蓋方式取代目前版本。回傳：
+Creating an exam requires exam creation permission. Only the owner and invited collaborators can manage an existing exam, and only the owner can add or remove collaborators. Only platform administrators can upload the shared toolchain.
 
-- `url`、`previewUrl`、`revision`。
-- `problems`：每題 `version` 與 `change`（`added`／`changed`／`unchanged`），`removedProblems` 為被移除的題目。
-- `overwroteSiteSettings`：被本機 `exam.json` 覆蓋的網站設定（例如管理者在網站上延長的結束時間）。若不打算覆蓋，先把網站上的值寫回 `exam.json` 再重新 build、deploy，並告知管理者。
+You can run `deploy` at any time, including during an exam, to replace the active revision. It returns:
 
-考試中替換題目時：
+- `url`, `previewUrl`, and `revision`.
+- `problems`, with each problem's `version` and `change` (`added`, `changed`, or `unchanged`). `removedProblems` lists removed problems.
+- `overwroteSiteSettings`, listing site settings overwritten by the local `exam.json`, such as an end time extended through the dashboard. To keep the site's settings, copy them into `exam.json`, then rebuild and deploy again. Inform the exam manager of the change.
 
-- 版本未變的題目不受影響。
-- 版本改變的題目，學生頁面會在背景自動更新；以舊版本送出的新提交會被要求確認新題目後再提交，草稿保留。
-- 已經開始判題的提交用它開始時的版本完成；已完成的提交保留原本的判定，不會自動重判。
+When you replace problems during an exam:
 
-`status` 輸出考試資訊、狀態、最後上傳時間、每題版本與統計，可用來確認上傳結果。
+- Problems whose versions have not changed are unaffected.
+- Students' pages refresh changed problems in the background. New submissions using an old version require the student to review the new problem before resubmitting. Drafts are preserved.
+- Submissions already being judged finish with the version they started with. Completed submissions retain their original verdicts and are not automatically rejudged.
 
-## 匯出後修改再上傳
+`status` returns exam information, status, the last upload time, problem versions, and statistics so you can check the deployment.
+
+## Export, edit, and upload again
 
 ```sh
 node packages/cli/bin/myriad.js --json export ../midterm --exam midterm --remote https://your-judge.example
 ```
 
-`export` 從網站還原可直接編輯的題目目錄：
+`export` restores an editable problem directory from the site:
 
-- `exam.json`：套用網站上目前的考試設定，所以下次 deploy 不會改回網站上的修改。
-- 每題的 `problem.json`、`statement.md`、`solution.c` 與 `tests/`。
-- `.myriad/bundles/`：歷次上傳，換一台電腦也能考後複判。
+- `exam.json` reflects the site's current settings, so the next deployment preserves edits made through the dashboard.
+- Each problem includes `problem.json`, `statement.md`, `solution.c`, and `tests/`.
+- `.myriad/bundles/` contains previous uploads, so you can rejudge the exam on another computer.
 
-管理者也可以在管理工作台的「成績與匯出」分頁下載同一份題目包，再用 `export ../midterm --file <下載的檔案>` 展開。
+Exam managers can also download the same problem package from the dashboard's Results and export tab, then unpack it with `export ../midterm --file <downloaded-file>`.
 
-目錄已有考試時需加 `--force`，會取代 `exam.json` 與 `problems/`。回傳：
+If the directory already contains an exam, add `--force`. This replaces `exam.json` and `problems/`. The command returns:
 
-- `settingsFromSite`：取自網站、與上傳時不同的欄位。
-- `missingSolutions`：缺少標準解的題目。
+- `settingsFromSite`, listing fields taken from the site that differ from the uploaded settings.
+- `missingSolutions`, listing problems without reference solutions.
 
-`build` 會把各題 `solution.c` 一併放進 bundle，伺服器只保存、不執行，也不會提供給學生。若 `missingSolutions` 非空，需補上相應的 `solution.c` 才能重新 build。
+`build` includes each problem's `solution.c` in the bundle. The server stores it but does not execute it or expose it to students. If `missingSolutions` is not empty, supply the missing `solution.c` files before rebuilding.
 
-重新 build 匯出的目錄，題目版本與網站上相同（測資、預期輸出與限制都相同）；revision 會改變，因為每次 build 都記錄完成時間。
+Rebuilding an exported directory produces the same problem versions as the site because the inputs, expected outputs, and limits are unchanged. The revision changes because each build records its completion time.
 
-## 網站上的考試資訊
+## Edit exam information on the site
 
-`/teacher` 選擇考試後顯示考試資訊與題目表（含版本短碼），題目內容唯讀。「編輯考試資訊」可修改標題、開始／結束時間、考試說明與計分方式，儲存後立即對學生生效，學生頁面最多一分鐘內自動更新。下一次 `deploy` 會以本機 `exam.json` 覆蓋這些欄位，並在 `overwroteSiteSettings` 列出。
+Select an exam in `/teacher` to see its information and problem table, including version prefixes. Problem content is read-only.
 
-## 考中監看
+Choose Edit exam information to change the title, start and end times, instructions, and scoring policy. Changes take effect as soon as you save them. Student pages refresh automatically within one minute. The next `deploy` overwrites these fields with the local `exam.json` and lists them in `overwroteSiteSettings`.
 
-瀏覽器 `/teacher` 登入後選擇考試，可查看提交／學號統計、下載／編譯／執行效能、錯誤比例、原始遙測匯出、提交快照匯出及同裝置多學號。訪客學號為自行填寫，NYCU 與 Google 帳號來自已驗證的 session；Google 顯示名稱不是學號或權限識別。裝置與效能資料不能證明作答真實性，不得把關聯或差異自動當成作弊結論。
+## Monitor an exam
 
-## 考後本機複判與內部檢視
+Sign in to `/teacher` and select an exam to see submission and student ID statistics, download/compilation/execution performance, error rates, raw telemetry exports, submission snapshot exports, and multiple student IDs used on one device. Guest student IDs are self-reported. NYCU and Google accounts come from verified sessions; a Google display name is neither a student ID nor an authorization identifier. Device and performance data cannot prove that a submission is authentic. Do not treat correlations or differences as proof of cheating.
 
-保留 `.myriad/bundles/`：考試中若曾多次 deploy，不同提交會對應不同的上傳。`pull` 回傳 `revisions` 與 `missingBundles`；`verify` 依每筆提交的 revision 使用當時的 bundle（測資、預期輸出與 salt），缺少任何一份會列出 revision 並停止。
+## Rejudge locally and review internal results
+
+Keep `.myriad/bundles/`. If you deploy more than once during an exam, submissions may belong to different uploads. `pull` returns `revisions` and `missingBundles`. `verify` uses each submission's revision to select the original bundle, including its inputs, expected outputs, and salt. If a bundle is missing, `verify` lists its revision and stops.
 
 ```sh
 node packages/cli/bin/myriad.js --json pull ../midterm --remote https://your-judge.example
@@ -123,56 +127,56 @@ node packages/cli/bin/myriad.js --json verify ../midterm
 node packages/cli/bin/myriad.js --json results upload ../midterm --remote https://your-judge.example
 ```
 
-`pull` 以穩定序號游標與固定 snapshot 下載完整已完成提交，保存 `.myriad/submissions.json`。正式複判應在考試結束後 pull，避免仍在進行中的提交使報告過期。
+`pull` downloads all completed submissions with a stable sequence cursor and a fixed snapshot, saving them to `.myriad/submissions.json`. For final rejudging, pull after the exam ends so submissions still in progress do not make the report stale.
 
-`verify` 本機重新編譯並執行每份程式，檢查程式 SHA-256、題目版本與當時的輸入，產生 `report/full.json`（每筆附 `problemVersion`）。包含逐筆 verdict 及與即時判定的差異分類。空提交不啟動執行器也可產生空報告。
+`verify` recompiles and runs every program locally, checking the source SHA-256, problem version, and original inputs. It writes `report/full.json`, including `problemVersion` for each submission, per-test verdicts, and categories for differences from the live verdict. If there are no submissions, it produces an empty report without starting the executor.
 
-`results upload` 在考試結束後上傳報告。系統檢查計分方式（以網站目前設定為準）、完整 snapshot、每份程式雜湊、題目版本及該版本的測試索引；缺漏、重複或過期報告被拒絕。回傳報告 revision、各學號成績及差異數。報告只供該考試管理者檢視。
+`results upload` uploads the report after the exam ends. The system checks the site's current scoring policy, the complete snapshot, every source hash, each problem version, and that version's test index. It rejects incomplete, duplicate, or stale reports. The response includes the report revision, scores by student ID, and the number of differences. Only that exam's managers can view the report.
 
-在管理工作台檢視複判分數與差異。`best` 選每題最高分，`last` 選每題最後建立的已完成提交；各題等權平均為百分制。差異分類不會另外扣分。
+Review rejudged scores and differences in the management dashboard. `best` selects the highest score for each problem; `last` selects each problem's most recently created completed submission. Problem scores are weighted equally and averaged on a 100-point scale. Difference categories do not cause additional deductions.
 
-本系統沒有成績發布命令或學生端成績頁。學生介面只用於考前準備及考試作答；截止時顯示結束提示，停止題目、測資與提交查詢。管理者仍可匯出提交、分析及複判資料。
+There is no command to publish grades and no student results page. The student interface supports preparation before an exam and submissions during it. At the deadline, it shows an ended notice and stops serving problems, test inputs, and submission queries. Exam managers can still export submissions, analytics, and rejudging data.
 
-## 考前以學生視角預覽
+## Preview as a student before the exam
 
-考試開始前，在同一瀏覽器登入 `/teacher`，選擇考試後按「以學生視角預覽」，或開啟 deploy 回傳的 `previewUrl`。預覽不受開始時間限制：可閱讀題目、使用範例、本機執行，並正式提交判題以確認子任務配分。頁面上方持續顯示預覽提示，「結束預覽」回到一般學生視角。
+Before the exam starts, sign in to `/teacher` in the same browser, select the exam, and choose Preview as a student, or open the `previewUrl` returned by `deploy`. Preview bypasses the start time: you can read problems, use samples, run code locally, and submit for judging to check subtask scoring. A preview notice stays visible at the top of the page. Choose End preview to return to the normal student view.
 
-伺服器只在請求帶有 `preview=1`，且同一瀏覽器以該考試擁有者或共同管理者身分登入管理工作台時開放；其他人帶此參數會被拒絕。預覽提交標記為 preview，不出現在學生提交紀錄、管理端統計、`pull`、匯出及複判 snapshot，也不送出瀏覽器遙測。考試開始後，考前建立的預覽提交會被清除。
+The server allows preview only when a request includes `preview=1` and the same browser is signed in to the dashboard as the exam owner or a collaborator. Other users are rejected even if they supply the parameter. Preview submissions are marked as preview and excluded from student submission histories, management statistics, `pull`, exports, and rejudging snapshots. They also send no browser telemetry. Preview submissions created before the exam are cleared after it starts.
 
-## 一次完整本機驗收
+## Run a full local acceptance check
 
-1. 使用獨立本機 D1/R2 目錄，套用所有 migrations，啟動 `wrangler dev --local --persist-to <directory>`。
-2. 以已啟用的 NYCU 或 Google 登入測試管理帳號，授予建立許可並建立個人 CLI 憑證；以平台憑證上傳工具鏈，建立兩場含同題目 ID 的考試並發布。CLI 從 repository 根目錄執行，以重用 `.wasm-oj-cache`。完整冷啟動驗收需包括 runtime 建置與首次工具鏈載入。
-3. 開始前檢查題目不可讀及獨立環境測試，並以管理者預覽完成執行與提交；確認管理端統計不含預覽提交。開始後以未登入管理工作台的瀏覽器執行、提交。
-4. 切換學號與考試，刷新深連結及上一頁，確認草稿、提交與結果隔離；驗證桌機及手機分頁。
-5. 考試結束後執行 pull、verify、upload，在管理工作台檢視內部報告，確認學生 API 無法讀取報告或考後提交摘要。
-6. `pnpm test` 補充驗證斷線續傳、重送／衝突 claim、並行冷卻、截止邊界、管理者撤銷與空報告。
+1. Use a separate local D1/R2 directory, apply all migrations, and start `wrangler dev --local --persist-to <directory>`.
+2. Sign in with a test manager account using an enabled NYCU or Google provider. Grant exam creation permission and create a personal CLI credential. Upload the toolchain with a platform credential, then create and deploy two exams containing the same problem ID. Run the CLI from the repository root to reuse `.wasm-oj-cache`. A full cold-start check must include building the runtime and loading the toolchain for the first time.
+3. Before the exam starts, check that problems cannot be read and run the standalone environment check. Run and submit code through manager preview, then confirm that management statistics exclude preview submissions. After the exam starts, run and submit code in a browser that is not signed in to the management dashboard.
+4. Switch student IDs and exams, reload deep links, and navigate back. Check that drafts, submissions, and results remain isolated. Test both desktop and mobile tabs.
+5. After the exam ends, run pull, verify, and upload. Review the internal report in the dashboard. Confirm that student APIs cannot read the report or submission summaries after the exam.
+6. Run `pnpm test` for additional coverage of interrupted upload recovery, retried or conflicting claims, concurrent cooldowns, deadline boundaries, manager access revocation, and empty reports.
 
-本機測試調整時鐘或直接更新隔離 fixture 的截止時間只用於加速測試，不是產品 API，也不可用於正式考試修改。
+Changing the local clock or directly updating an isolated fixture's deadline only speeds up testing. These are not product APIs and must not be used to modify a live exam.
 
-## 建立許可與考試協作
+## Exam creation permission and collaboration
 
-平台管理員由 `ADMIN_IDENTITIES` 指定經驗證登入服務的帳號，支援 NYCU OAuth 與透過 Firebase Authentication 的 Google 登入；部署用 `ADMIN_TOKEN` 是獨立的平台服務憑證。助教不需要取得平台憑證。平台管理員可在管理工作台的「帳號與權限」或以 `permissions grant --provider nycu --subject USERNAME` 授予建立許可；Google 使用 `permissions grant --provider google --subject GOOGLE_SUB`，請複製 Myriad 帳號資訊中的 Google 識別，不可填入 Firebase UID、email 或姓名。`permissions revoke ACCOUNT_ID` 撤銷建立許可，既有 owner／共同管理資格保留。
+`ADMIN_IDENTITIES` designates platform administrators by their verified provider accounts. Supported providers are NYCU OAuth and Google through Firebase Authentication. The deployment's `ADMIN_TOKEN` is a separate platform service credential; teaching assistants do not need it. A platform administrator can grant exam creation permission under Account and permissions in the dashboard, or with `permissions grant --provider nycu --subject USERNAME`. For Google, use `permissions grant --provider google --subject GOOGLE_SUB`. Copy the Google identifier from the account information shown by Myriad; do not use a Firebase UID, email address, or name. Use `permissions revoke ACCOUNT_ID` to revoke exam creation permission while preserving existing ownership and collaborator access.
 
-owner 在考試權限區加入共同管理者，或使用 `members invite --exam EXAM_ID --provider nycu --subject USERNAME`。共同管理者能修改、發布、預覽、匯出與複判該考試，但無法邀請其他人，也不因此取得建立新考試的許可。`members list --exam EXAM_ID` 列出成員，`members remove ACCOUNT_ID --exam EXAM_ID` 移除；既有 session 與 API 憑證下一次請求即受新權限限制。
+The owner can add collaborators in the exam permissions section or with `members invite --exam EXAM_ID --provider nycu --subject USERNAME`. Collaborators can edit, publish, preview, export, and rejudge that exam. They cannot invite others, and collaboration does not grant permission to create new exams. `members list --exam EXAM_ID` lists members; `members remove ACCOUNT_ID --exam EXAM_ID` removes one. Existing sessions and API credentials are subject to the new permissions on their next request.
 
-邀請 Google 帳號時改用 `--provider google --subject GOOGLE_SUB`。請受邀者登入後提供自己的 subject；不同服務的帳號不會因同名或相同 email 合併，權限需分別授予。
+To invite a Google account, use `--provider google --subject GOOGLE_SUB`. Ask the invitee to sign in and provide their subject. Accounts from different providers are not merged by matching names or email addresses; grant permissions separately.
 
-需要分開檢查與釋出時，先 `stage DIR`，檢查其 `revision` 與 `currentRevision`，再 `publish --exam EXAM_ID --revision REVISION --expected-revision CURRENT_REVISION`；首次發布以 `none` 代表尚無目前版本。這些命令皆需 `--remote` 與個人憑證。`deploy` 是相同兩步的組合操作。所有資料的更新由使用者主動操作，管理者介面不做自動輪詢。
+To separate review from release, first run `stage DIR` and inspect its `revision` and `currentRevision`. Then run `publish --exam EXAM_ID --revision REVISION --expected-revision CURRENT_REVISION`. For the first publication, use `none` to indicate that no active revision exists. These commands all require `--remote` and a personal credential. `deploy` combines the same two steps. Dashboard data refreshes only on user action; the management interface does not poll automatically.
 
-## 起始程式碼與實作要求
+## Starter code and implementation requirements
 
-每題的 `problem.json` 可加入兩個選用欄位，兩者都隨 bundle 上傳及匯出：
+Each problem's `problem.json` supports two optional fields, both included in uploads and exports:
 
 ```json
 {
-  "template": "#include <stdio.h>\n\nint solve(int *values, int n) {\n    // 完成實作\n}\n",
-  "semanticCheck": "必須以指標走訪陣列，不能使用陣列下標。"
+  "template": "#include <stdio.h>\n\nint solve(int *values, int n) {\n    // Complete the implementation\n}\n",
+  "semanticCheck": "Traverse the array with pointers. Do not use array subscripts."
 }
 ```
 
-`template` 只用於沒有既有草稿的題目；省略時使用通用模板，空字串代表空白編輯器。修改模板不改變判題版本。`semanticCheck` 最多 2,000 個 Unicode 字元，修改條件會改變題目版本。
+`template` is used only if the problem has no existing draft. Omit it to use the default template, or set it to an empty string for a blank editor. Changing the template does not change the judging version. `semanticCheck` accepts up to 2,000 Unicode characters. Changing it changes the problem version.
 
-有實作要求的提交會並行進行瀏覽器測資執行與 Worker 上的 OpenAI 語意檢查，兩邊都保存結果後才結算。模型未通過時保留測資結果與原因，該次得分為零；服務失敗則保留結果，讓使用者在提交有效期間重試。管理者可查看原始碼與模型原因；本機複判只重新執行測資，保留已有的語意判定。
+Submissions with implementation requirements run browser tests and an OpenAI semantic check requested by the Worker in parallel. Both results must be saved before the submission is finalized. If the model rejects the implementation, the test results and reason are retained, but the submission scores zero. If the service fails, the results are retained so the user can retry while the submission remains valid. Exam managers can inspect the source and the model's reason. Local rejudging reruns only the tests and preserves the existing semantic verdict.
 
-部署者需先設定 `OPENAI_API_KEY` 才能發布帶有實作要求的題目。資料傳送範圍與設定見 [部署指南](deployment.md#openai-實作要求檢查)。應使用實際模型驗證符合及違反要求的合成範例，並由管理者審視自動判斷。
+Set `OPENAI_API_KEY` before publishing problems with implementation requirements. See the [deployment guide](deployment.md#openai-implementation-checks) for configuration and the data sent to the service. Validate synthetic examples that satisfy and violate the requirements with the actual model, and have an exam manager review its judgments.

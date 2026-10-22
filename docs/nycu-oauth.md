@@ -1,25 +1,25 @@
-# NYCU OAuth 登入
+# NYCU OAuth sign-in
 
-NYCU OAuth 是可獨立啟用的登入服務；也可選用 [Google 登入](google-oauth.md)。學生可用啟用服務的帳號登入，或以自行填寫識別的訪客身分作答；管理者以經驗證的帳號取得獲授予的權限。此文件描述自己的 NYCU 應用程式設定，Cloudflare 資源與 secrets 的完整部署流程見 [部署指南](deployment.md)。
+NYCU OAuth is an optional sign-in provider that can be enabled on its own or alongside [Google sign-in](google-oauth.md). Students can sign in with an enabled provider or answer as guests using an identifier they enter themselves. Exam managers use verified accounts to access the permissions granted to them. This guide covers setting up your own NYCU application. See the [deployment guide](deployment.md) for the full Cloudflare resource and secret setup.
 
-## 註冊應用程式
+## Register an application
 
-依 [NYCU OAuth 官方文件](https://id.nycu.edu.tw/docs/) 註冊應用程式，取得自己的 client ID 與 client secret：
+Follow the [official NYCU OAuth documentation](https://id.nycu.edu.tw/docs/) to register an application and obtain your own client ID and client secret:
 
-| 欄位                     | 值                                                                         |
-| ------------------------ | -------------------------------------------------------------------------- |
-| Client name              | 自己的服務名稱，例如 Myriad                                                |
-| Client type              | `Public`                                                                   |
-| Authorization grant type | `Authorization code`                                                       |
-| Redirect URIs            | `https://judge.example.com/api/auth/nycu/callback`，將網域換成實際部署網址 |
+| Field                    | Value                                                                                           |
+| ------------------------ | ----------------------------------------------------------------------------------------------- |
+| Client name              | Your service name, for example Myriad                                                           |
+| Client type              | `Public`                                                                                        |
+| Authorization grant type | `Authorization code`                                                                            |
+| Redirect URIs            | `https://judge.example.com/api/auth/nycu/callback`, with the domain replaced by your deployment |
 
-本機測試需另加入實際 callback，例如 `http://localhost:8787/api/auth/nycu/callback`。每個允許的網址都必須登錄；localhost 是否可註冊依校方規則而定。
+For local testing, also register the exact callback URL, such as `http://localhost:8787/api/auth/nycu/callback`. Every allowed URL must be registered. Whether localhost URLs can be registered depends on the university's rules.
 
-Myriad 請求 `profile` scope，以回傳的 `username` 作為 NYCU 帳號識別，不從姓名、email 或顯示文字推測權限。要求其他校務資料需另外申請 scope 並修改對應程式。
+Myriad requests the `profile` scope and uses the returned `username` as the NYCU account identifier. It does not infer permissions from a name, email address, or display text. Accessing other university records requires additional scopes and corresponding code changes.
 
-## 設定 Worker
+## Configure the Worker
 
-本機使用被 Git 忽略的 `apps/worker/.dev.vars`：
+For local development, use the Git-ignored `apps/worker/.dev.vars`:
 
 ```dotenv
 APP_ORIGIN=http://localhost:8787
@@ -28,32 +28,39 @@ NYCU_CLIENT_SECRET=your-client-secret
 ADMIN_IDENTITIES=[{"provider":"nycu","subject":"your-username"}]
 ```
 
-保留同一檔案中已設定的 `ADMIN_TOKEN` 和 `ATTEMPT_SECRET`。正式環境將 `APP_ORIGIN`、`NYCU_CLIENT_ID` 和 `ADMIN_IDENTITIES` 放入自己的 production 設定，將 `NYCU_CLIENT_SECRET` 設為 Worker secret：
+Keep the existing `ADMIN_TOKEN` and `ATTEMPT_SECRET` in the same file. In production, put `APP_ORIGIN`, `NYCU_CLIENT_ID`, and `ADMIN_IDENTITIES` in your production configuration, and set `NYCU_CLIENT_SECRET` as a Worker secret:
 
 ```sh
 pnpm --filter=@myriad/worker exec wrangler secret put NYCU_CLIENT_SECRET --config wrangler.production.jsonc
 ```
 
-NYCU 登入需要同時設定 `APP_ORIGIN`、`NYCU_CLIENT_ID` 和 `NYCU_CLIENT_SECRET`。僅使用 NYCU 的部署將 `FIREBASE_PROJECT_ID` 和 `FIREBASE_API_KEY` 留空即可，不需建立 Firebase 專案。
+NYCU sign-in requires all three of `APP_ORIGIN`, `NYCU_CLIENT_ID`, and `NYCU_CLIENT_SECRET`. Deployments that use only NYCU can leave `FIREBASE_PROJECT_ID` and `FIREBASE_API_KEY` empty; no Firebase project is needed.
 
-`APP_ORIGIN` 必須是單一 origin：無路徑、結尾斜線或 query。正式環境使用 HTTPS；本機僅接受 `localhost` 或 `127.0.0.1` 的 HTTP origin。瀏覽器實際使用的主機與連接埠必須一致，不能混用這兩個主機名稱。
+`APP_ORIGIN` must be a single origin with no path, trailing slash, or query. Use HTTPS in production. Local development accepts HTTP origins only for `localhost` or `127.0.0.1`. The hostname and port must match the URL used in the browser; the two local hostnames are not interchangeable.
 
-`pnpm dev:worker` 依 `.dev.vars` 中 `APP_ORIGIN` 的連接埠啟動，預設為 8787。`pnpm dev:web` 提供另一個 Vite origin 並代理 API；完整登入與 cookie 寫入流程應在 Worker origin 驗收。從其他 origin 啟動登入時，應用程式會提示正確的網址。
+`pnpm dev:worker` uses the port from `APP_ORIGIN` in `.dev.vars`, defaulting to 8787. `pnpm dev:web` provides a separate Vite origin and proxies API requests. Verify the complete sign-in and cookie flow from the Worker origin. If sign-in starts from another origin, the application shows the correct URL.
 
-## 平台管理員與出題者
+## Platform administrators and exam authors
 
-`ADMIN_IDENTITIES` 是由部署者設定的 `(provider, subject)` 清單，比對經驗證的 OAuth 帳號。NYCU profile 不包含 Myriad 管理角色。未設定清單時，不會有 OAuth 平台管理員，獨立的 `ADMIN_TOKEN` 仍可用於授予建立許可及上傳工具鏈。
+`ADMIN_IDENTITIES` is a list of `(provider, subject)` pairs configured by the deployer and matched against verified OAuth accounts. The NYCU profile does not contain Myriad administrator roles. Without this list, there are no OAuth platform administrators. The separate `ADMIN_TOKEN` can still grant exam creation permission and upload toolchains.
 
-平台管理員登入 `/teacher`，在「帳號與權限」授予自己或其他帳號建立考試許可。具有建立許可的帳號才能建立新考試並成為 owner；owner 可以邀請共同管理者。受邀者不需要建立許可，也只能管理獲邀的考試。
+Platform administrators sign in at `/teacher` and use **Account and permissions** to grant exam creation permission to themselves or other accounts. An account needs creation permission to create a new exam and become its owner. Owners can invite co-managers. Invitees do not need creation permission and can manage only the exams they are invited to.
 
-出題者登入後可建立可撤銷的個人 CLI 憑證，CLI 使用 `MYRIAD_TEACHER_TOKEN` 或 `--token-file`。不要將平台 `ADMIN_TOKEN` 配發給一般出題者。更多權限與 CLI 操作見 [管理者手冊](agent-workflow.md)。
+After signing in, exam authors can create revocable personal CLI credentials. The CLI accepts them through `MYRIAD_TEACHER_TOKEN` or `--token-file`. Do not distribute the platform `ADMIN_TOKEN` to ordinary exam authors. See the [manager guide](agent-workflow.md) for more on permissions and CLI commands.
 
-## Session 與驗收
+## Sessions and verification
 
-- 授權使用一次性 state 與 S256 PKCE，callback 消耗有效 state 後才建立 session。
-- NYCU session 使用 24 小時 HttpOnly cookie，資料庫保存 session 雜湊。校方 access token 僅用於當次讀取帳號。
-- 訪客、NYCU 與 Google 身分使用不同 participant ID，草稿、提交、摘要、冷卻和成績不因相同顯示文字而合併。
-- 同一個 NYCU session 可用於學生及管理介面，管理權限由每次請求另外檢查；cookie 管理寫入需符合 Origin 檢查。
-- 異常、取消或逾期登入會返回應用程式並顯示錯誤，使用者可重新登入或改用訪客作答。
+- Authorization uses a one-time state and S256 PKCE. The callback consumes a valid state before creating a session.
+- NYCU sessions use a 24-hour HttpOnly cookie, with a session hash stored in the database. The university access token is used only to fetch the account during that sign-in.
+- Guest, NYCU, and Google identities have distinct participant IDs. Even when their display text matches, their drafts, submissions, summaries, cooldowns, and grades remain separate.
+- The same NYCU session works in both student and management interfaces. Each request checks management permissions separately, and management writes authenticated by a cookie must pass the Origin check.
+- Failed, cancelled, or expired sign-ins return to the application with an error. Users can try again or answer as guests.
 
-自動測試使用本機 Worker／D1 和隔離的 OAuth 回應，涵蓋 state、callback 重放、取消、逾期、跨站登出與身分隔離。正式驗收需由持有 NYCU 帳號的人完成真實登入，確認返回原頁面、帳號識別、重新整理後保留 session、訪客切換、考試提交及管理權限。
+Automated tests use a local Worker and D1 with isolated OAuth responses. They cover state, callback replay, cancellation, expiry, cross-site logout, and identity isolation. For production verification, someone with a NYCU account must complete a real sign-in and check:
+
+- Return to the original page.
+- The account identifier.
+- Session persistence after a refresh.
+- Switching to a guest.
+- Exam submissions.
+- Management permissions.

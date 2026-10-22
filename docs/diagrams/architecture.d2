@@ -1,0 +1,132 @@
+vars: {
+  d2-config: {
+    layout-engine: tala
+    theme-id: 0
+    pad: 24
+    data: {
+      tala-seeds: [
+        1
+        2
+        3
+      ]
+    }
+  }
+}
+
+direction: down
+*.style: {
+  font-size: 17
+  stroke-width: 2
+}
+
+devices: Local devices {
+  top: 0
+  left: 0
+  style: {
+    fill: "#F8FAFC"
+    stroke: "#CBD5E1"
+    font-color: "#334155"
+    border-radius: 12
+  }
+  direction: down
+
+  browser: Student browser\nCompile and run C with WASM-OJ {
+    style: {
+      fill: "#FFF7ED"
+      stroke: "#C2410C"
+      font-color: "#7C2D12"
+      border-radius: 8
+    }
+  }
+
+  cli: Exam manager CLI\nBuild bundles and verify locally {
+    style: {
+      fill: "#EFF6FF"
+      stroke: "#2563EB"
+      font-color: "#1E3A8A"
+      border-radius: 8
+    }
+  }
+}
+
+cloud: Cloudflare {
+  top: 0
+  left: 560
+  style: {
+    fill: "#F0FDFA"
+    stroke: "#5EEAD4"
+    font-color: "#134E4A"
+    border-radius: 12
+  }
+
+  worker: Worker API\nIdentity, timing and permissions\nChecksum comparison {
+    style: {
+      fill: "#CCFBF1"
+      stroke: "#0F766E"
+      font-color: "#134E4A"
+      border-radius: 8
+    }
+  }
+
+  d1: D1\nAccounts and permissions\nSubmissions and telemetry {
+    shape: cylinder
+    style: {
+      fill: "#FFFFFF"
+      stroke: "#0F766E"
+      font-color: "#134E4A"
+    }
+  }
+
+  r2: R2\nBundles and test inputs\nToolchain files {
+    shape: cylinder
+    style: {
+      fill: "#FFFFFF"
+      stroke: "#0F766E"
+      font-color: "#134E4A"
+    }
+  }
+
+  worker -> d1
+  worker -> r2
+}
+
+external: Optional services {
+  top: 540
+  left: 690
+  style: {
+    fill: "#FAF5FF"
+    stroke: "#D8B4FE"
+    font-color: "#581C87"
+    border-radius: 12
+  }
+  direction: down
+
+  openai: OpenAI Responses API\nSemantic checks {
+    style: {
+      fill: "#FFFFFF"
+      stroke: "#9333EA"
+      font-color: "#581C87"
+      border-radius: 8
+    }
+  }
+
+  posthog: PostHog\nProduct analytics {
+    style: {
+      fill: "#FFFFFF"
+      stroke: "#9333EA"
+      font-color: "#581C87"
+      border-radius: 8
+    }
+  }
+}
+
+devices.browser -> cloud.worker: Source snapshots\nChecksum claims and telemetry
+cloud.worker -> devices.browser: Problems and test inputs
+devices.cli -> cloud.worker: Validated bundles\nLocal verification reports
+cloud.worker -> devices.cli: Submission exports
+cloud.worker -> external.openai: Requirements and source {
+  style.stroke-dash: 4
+}
+cloud.worker -> external.posthog: Analytics events {
+  style.stroke-dash: 4
+}
