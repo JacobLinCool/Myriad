@@ -23,7 +23,7 @@
     "@wasm-oj/toolchain-clang": "0.2.0",
     "canvas-confetti": "^1.9.4",
     "codemirror": "^6.0.1",
-    "dompurify": "^3.2.4",
+    "dompurify": "^3.4.17",
     "katex": "^0.19.0",
     "lucide-svelte": "^1.0.1",
     "marked": "^15.0.7",
