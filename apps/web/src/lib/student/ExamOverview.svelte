@@ -21,7 +21,8 @@
       | "showIdentity"
       | "student"
       | "identityLabel"
-      | "studentInput"
+      | "studentLabel"
+      | "openIdentity"
     >;
   } = $props();
 </script>
@@ -47,16 +48,11 @@
     </header>
     <section>
       <h2>確認作答身分</h2>
-      <p>選擇 NYCU 登入或訪客作答，確認身分後開始。</p>
+      <p>選擇登入或訪客作答，確認身分後開始。</p>
       <div class="toolbar">
         <strong class="ph-no-capture"
-          >{session.student || "尚未選擇身分"}</strong
-        ><button
-          onclick={() => {
-            session.studentInput = session.student;
-            session.showIdentity = true;
-          }}>填寫／切換身分</button
-        >
+          >{session.studentLabel || "尚未選擇身分"}</strong
+        ><button onclick={session.openIdentity}>填寫／切換身分</button>
       </div>
     </section>
     <section>
@@ -67,11 +63,6 @@
           lines={3}
         />
       </article>
-      <p class="muted">
-        每題採{session.exam.policy === "best"
-          ? "最佳"
-          : "最後一次"}提交計分，各題等權平均。
-      </p>
     </section>
     <section>
       <h2>作答準備</h2>

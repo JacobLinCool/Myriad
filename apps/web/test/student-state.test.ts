@@ -189,7 +189,15 @@ it("a failed draft save keeps the current identity, route and in-memory code", a
 it("isolates same-name NYCU and guest drafts when switching identity", async () => {
   const request = vi.fn(async (path: string) =>
     path === "/api/auth/session"
-      ? { nycuEnabled: true, account: { kind: "nycu", label: "same" } }
+      ? {
+          providers: ["nycu"],
+          account: {
+            kind: "nycu",
+            label: "same",
+            displayName: "same",
+            analyticsId: "nycu-same",
+          },
+        }
       : path.includes("/submissions")
         ? { submissions: [] }
         : exam("a"),
@@ -214,7 +222,15 @@ it("keeps the current identity and draft when logout fails", async () => {
   const request = vi.fn(async (path: string, method: string) => {
     if (method === "DELETE") throw new Error("offline");
     return path === "/api/auth/session"
-      ? { nycuEnabled: true, account: { kind: "nycu", label: "same" } }
+      ? {
+          providers: ["nycu"],
+          account: {
+            kind: "nycu",
+            label: "same",
+            displayName: "same",
+            analyticsId: "nycu-same",
+          },
+        }
       : path.includes("/submissions")
         ? { submissions: [] }
         : exam("a");
@@ -442,4 +458,97 @@ it("uses each problem template only for a new draft, preserving even empty saved
   expect(drafts.open("", "exam", "function", "anonymous template")).toBe(
     "anonymous template",
   );
+});
+
+it("uses Google's immutable subject in history and drafts, then restores the guest on logout", async () => {
+  const subject = "g".repeat(255);
+  let authenticated = true;
+  const request = vi.fn(async (path: string, method: string) => {
+    if (path === "/api/auth/session") {
+      if (method === "DELETE") authenticated = false;
+      return {
+        providers: ["google"],
+        account: authenticated
+          ? {
+              kind: "google",
+              label: subject,
+              displayName: "A Student",
+              analyticsId: "google-analytics",
+            }
+          : null,
+      };
+    }
+    return path.includes("/submissions")
+      ? { submissions: [], hasMore: false, nextCursor: 0 }
+      : exam("a");
+  });
+  const s = session(request as typeof api);
+  await s.refreshIdentity();
+  expect(s.providers).toEqual(["google"]);
+  expect(s.identityLabel).toBe("Google");
+  expect(s.student).toBe(subject);
+  expect(s.studentLabel).toBe("A Student");
+  await s.navigate("/exams/a/problems/same");
+  expect(request.mock.calls.map(([path]) => path)).toContain(
+    `/api/exams/a/submissions?student=${subject}&identityKind=google&after=0`,
+  );
+  s.code = "Google draft";
+  s.studentInput = "guest";
+  s.openIdentity();
+  expect(s.studentInput).toBe("guest");
+  await s.useGuest();
+  expect(s.identityKind).toBe("guest");
+  expect(s.studentLabel).toBe("guest");
+  expect(s.code).toBe(codeTemplate);
+  expect(request).toHaveBeenCalledWith(
+    "/api/auth/session",
+    "DELETE",
+    undefined,
+    expect.anything(),
+  );
+  authenticated = true;
+  await s.refreshIdentity();
+  await s.load();
+  expect(s.code).toBe("Google draft");
+});
+it("drops a revoked authenticated identity when refreshing the session", async () => {
+  localStorage.setItem("myriad_student_id", "guest-name");
+  const s = session(
+    vi.fn(async () => ({ providers: [], account: null })) as typeof api,
+  );
+  s.student = "google-subject";
+  s.identityKind = "google";
+  s.displayName = "Google Name";
+  await s.refreshIdentity();
+  expect(s.authReady).toBe(true);
+  expect(s.providers).toEqual([]);
+  expect(s.identityKind).toBe("guest");
+  expect(s.student).toBe("guest-name");
+  expect(s.studentLabel).toBe("guest-name");
+});
+
+it("leaves teacher callback failures for the teacher view", async () => {
+  window.history.replaceState(
+    {},
+    "",
+    "/teacher?auth_error=cancelled&auth_provider=google",
+  );
+  const s = session(
+    vi.fn(async () => ({ providers: ["google"], account: null })) as typeof api,
+  );
+  s.mount();
+  await vi.waitFor(() => expect(s.authReady).toBe(true));
+  expect(s.showIdentity).toBe(false);
+  expect(s.error).toBe("");
+  expect(location.search).toContain("auth_provider=google");
+});
+it("rejects an oversized guest label before logging out the authenticated account", async () => {
+  const request = vi.fn();
+  const s = session(request as typeof api);
+  s.identityKind = "google";
+  s.student = "google-subject";
+  s.studentInput = "g".repeat(65);
+  await s.useGuest();
+  expect(request).not.toHaveBeenCalled();
+  expect(s.identityKind).toBe("google");
 });

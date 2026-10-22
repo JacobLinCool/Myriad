@@ -1,4 +1,9 @@
-import type { PublicExam, ProblemPublic, AttemptSummary } from "@myriad/shared";
+import type {
+  IdentityKind,
+  PublicExam,
+  ProblemPublic,
+  AttemptSummary,
+} from "@myriad/shared";
 import { getDeviceId } from "../device";
 import { SubmissionRejected } from "../api";
 import { reportError, track } from "../posthog";
@@ -17,7 +22,7 @@ export interface ExecutionContext {
   exam: PublicExam | null;
   problem: ProblemPublic | null;
   student: string;
-  identityKind: "guest" | "nycu";
+  identityKind: IdentityKind;
   code: string;
   input: string;
   readonly loadVersion: number;
@@ -183,7 +188,7 @@ interface Pending {
   /** The problem version this copy was written against. */
   problemVersion: string;
   studentId: string;
-  identityKind: "guest" | "nycu";
+  identityKind: IdentityKind;
   deviceId: string;
   code: string;
   problem: ProblemPublic;

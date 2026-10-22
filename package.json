@@ -5,15 +5,29 @@
   "type": "module",
   "scripts": {
     "build": "pnpm --filter=@myriad/shared build && pnpm --filter=@myriad/cli build && pnpm --filter=@myriad/worker typecheck && pnpm --filter=@myriad/web build",
-    "test": "pnpm -r test",
+    "test": "pnpm test:scripts && pnpm -r test",
     "dev:worker": "pnpm --filter=@myriad/worker dev",
     "dev:web": "pnpm --filter=@myriad/web dev",
-    "dev": "pnpm --filter=@myriad/worker dev"
+    "dev": "pnpm --filter=@myriad/worker dev",
+    "typecheck": "pnpm --filter=@myriad/shared build && pnpm -r --if-present typecheck",
+    "check:repo": "node scripts/check-repo.mjs",
+    "format": "prettier --ignore-path .gitignore --ignore-path .prettierignore --write .",
+    "format:check": "prettier --ignore-path .gitignore --ignore-path .prettierignore --check .",
+    "check": "pnpm check:repo && pnpm format:check && pnpm build && pnpm typecheck && pnpm test",
+    "test:scripts": "node --test scripts/*.test.mjs"
   },
   "devDependencies": {
     "prettier": "^3.9.9",
     "prettier-plugin-svelte": "^3.5.2",
     "typescript": "^5.8.2",
-    "vitest": "^3.0.7"
+    "vitest": "^4.1.12",
+    "vite": "^6.4.4"
+  },
+  "description": "A browser-based C programming exam platform with local verification.",
+  "license": "MIT",
+  "packageManager": "pnpm@12.4.2",
+  "engines": {
+    "node": ">=24.18.0 <25",
+    "pnpm": ">=12 <13"
   }
 }

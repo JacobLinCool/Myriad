@@ -13,6 +13,7 @@ import {
   type SemanticCheckResult,
   type TestClaim,
   type TestVerdict,
+  type IdentityKind,
 } from "@myriad/shared";
 import {
   attemptToken,
@@ -28,7 +29,7 @@ import {
 } from "./core.js";
 import { requireParticipant } from "./auth.js";
 export interface AttemptRow {
-  identity_kind: "guest" | "nycu";
+  identity_kind: IdentityKind;
   participant_id: string;
   sequence: number;
   id: string;

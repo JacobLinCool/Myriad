@@ -37,6 +37,11 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
 });
+it("rejects an invalid generated exam ID before writing the scaffold", async () => {
+  const target = path.join(dir, "invalid name");
+  await expect(initialize(target)).rejects.toThrow();
+  await expect(fs.access(target)).rejects.toMatchObject({ code: "ENOENT" });
+});
 it("builds self-contained content and deploys the verified snapshot after sources change", async () => {
   await initialize(dir);
   await build(dir);
@@ -111,6 +116,30 @@ it("rejects mutated bundles before any remote publication", async () => {
     JSON.stringify(bundle),
   );
   await expect(readBundle(dir)).rejects.toThrow("digest");
+});
+it("reports an unreadable bundle history instead of treating it as empty", async () => {
+  await initialize(dir);
+  await build(dir);
+  const bundle = await readBundle(dir);
+  await fs.writeFile(
+    path.join(dir, ".myriad/submissions.json"),
+    JSON.stringify({
+      examId: bundle.content.exam.id,
+      revision: bundle.revision,
+      policy: bundle.content.exam.policy,
+      snapshot: 0,
+      submissions: [],
+    }),
+  );
+  const history = path.join(dir, ".myriad/bundles");
+  await fs.rm(history, { recursive: true });
+  await fs.writeFile(history, "not a directory");
+  await expect(verify(dir)).rejects.toMatchObject({ code: "ENOTDIR" });
+  await expect(
+    fs.access(path.join(dir, "report/full.json")),
+  ).rejects.toMatchObject({
+    code: "ENOENT",
+  });
 });
 it("versions problems by judged content and verifies each submission with its own upload", async () => {
   await initialize(dir);

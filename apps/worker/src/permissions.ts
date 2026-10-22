@@ -17,15 +17,17 @@ export interface Account {
 export async function ensureAccount(
   c: AppContext,
   identity: z.infer<typeof IdentitySchema>,
+  displayName?: string,
 ): Promise<Account> {
   await c.env.DB.prepare(
-    "INSERT INTO accounts(id,provider,subject,name) VALUES(?,?,?,?) ON CONFLICT(provider,subject) DO NOTHING",
+    "INSERT INTO accounts(id,provider,subject,name) VALUES(?,?,?,?) ON CONFLICT(provider,subject) DO UPDATE SET name=COALESCE(?,accounts.name)",
   )
     .bind(
       crypto.randomUUID(),
       identity.provider,
       identity.subject,
-      identity.subject,
+      displayName ?? identity.subject,
+      displayName ?? null,
     )
     .run();
   return (await c.env.DB.prepare(
@@ -63,9 +65,8 @@ export async function account(c: AppContext): Promise<Account | null> {
   const oauth = getCookie(c, "myriad_student");
   if (!oauth) return null;
   checkSessionOrigin(c);
-  // NYCU's verified subject is username. New providers must implement their own verified-session adapter.
   return c.env.DB.prepare(
-    "SELECT a.* FROM accounts a JOIN student_sessions s ON a.provider='nycu' AND a.subject=s.username WHERE s.hash=? AND s.expires_at>?",
+    "SELECT a.* FROM accounts a JOIN student_sessions s ON a.id=s.account_id WHERE s.hash=? AND s.expires_at>?",
   )
     .bind(await sha256Hex(oauth), Date.now())
     .first<Account>();

@@ -76,9 +76,7 @@ components:
 
 ## Overview
 
-**Creative North Star: "The Codex Workspace"**
-
-A focused programming workspace modeled on the Codex desktop reference. Neutral charcoal surfaces, quiet dividers and compact type keep the problem, source and execution feedback close together. Traditional Chinese labels explain actions and state directly.
+A focused programming workspace. Neutral charcoal surfaces, quiet dividers and compact type keep the problem, source and execution feedback close together. Traditional Chinese labels explain actions and state directly.
 
 Density comes from stable panes and restrained spacing. Tonal selection, underlines, icons and written status establish hierarchy; color supports those signals. The editor is the working center, with identity and remaining time visible around it.
 
@@ -86,7 +84,7 @@ Density comes from stable panes and restrained spacing. Tonal selection, underli
 
 - Neutral charcoal shell with a narrow icon rail.
 - Independent statement, source and judge surfaces.
-- Persistent exam time and self-declared identity.
+- Persistent exam time and current identity.
 - Compact controls with visible keyboard focus.
 
 ## Mark

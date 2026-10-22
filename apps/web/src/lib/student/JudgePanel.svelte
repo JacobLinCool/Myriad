@@ -1,4 +1,6 @@
 <script lang="ts">
+  import confetti from "canvas-confetti";
+  import { untrack } from "svelte";
   import { Terminal, FlaskConical, History } from "lucide-svelte";
   import type { StudentSession } from "../state/student.svelte";
   import { date } from "../format";
@@ -42,6 +44,32 @@
     total && session.verdicts.length ? session.verdicts.length / total : null,
   );
   const score = new Tween(0, { easing: cubicOut });
+  // Remounting a saved result must not replay its celebration.
+  let celebratedAttempt = untrack(() => session.last?.id);
+  $effect(() => {
+    const result = session.last;
+    if (
+      !result ||
+      result.status !== "complete" ||
+      result.score !== 1 ||
+      result.id === celebratedAttempt
+    )
+      return;
+    celebratedAttempt = result.id;
+    if (prefersReducedMotion.current) return;
+
+    const options = {
+      particleCount: 110,
+      spread: 55,
+      startVelocity: 60,
+      ticks: 240,
+      colors: ["#ffc857", "#ff6b8a", "#7dd3fc", "#a78bfa", "#6ee7b7"],
+      disableForReducedMotion: true,
+    };
+    void confetti({ ...options, angle: 60, origin: { x: 0, y: 0.65 } });
+    void confetti({ ...options, angle: 120, origin: { x: 1, y: 0.65 } });
+    return () => confetti.reset();
+  });
   $effect(() => {
     const target = session.last ? session.last.score * 100 : 0;
     void score.set(target, {

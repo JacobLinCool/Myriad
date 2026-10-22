@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { analyticsId } from "./analytics.js";
+import { enabledProviders } from "./auth-providers.js";
 import { sha256Hex } from "@myriad/shared";
 import {
   account,
@@ -23,11 +24,7 @@ management.get("/api/teacher/access", async (c) => {
     },
     canCreateExams: identity ? await canCreate(c, identity.id) : false,
     isAdmin: isAdministrator(c, identity),
-    nycuEnabled: !!(
-      c.env.APP_ORIGIN &&
-      c.env.NYCU_CLIENT_ID &&
-      c.env.NYCU_CLIENT_SECRET
-    ),
+    providers: enabledProviders(c.env),
   });
 });
 management.get("/api/admin/creation-grants", async (c) => {

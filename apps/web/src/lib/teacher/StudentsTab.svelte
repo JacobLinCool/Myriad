@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { identityLabel } from "@myriad/shared";
   import { api } from "../api";
   import { teacherPath } from "../state/routes";
   import type { createTeacherSession } from "../state/teacher.svelte";
@@ -90,7 +91,7 @@
           <tr
             ><th scope="row"
               >{student.studentId}<small
-                >{student.identityKind === "nycu" ? "NYCU" : "訪客"}</small
+                >{identityLabel(student.identityKind)}</small
               ></th
             >{#each detail.problems as p (p.id)}
               {@const cell = student.cells[p.id]}

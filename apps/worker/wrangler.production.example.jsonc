@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "myriad-worker",
+  "account_id": "replace-with-your-cloudflare-account-id",
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "judge.example.com",
+      "custom_domain": true,
+    },
+  ],
+  "vars": {
+    "APP_ORIGIN": "https://judge.example.com",
+    "NYCU_CLIENT_ID": "",
+    "FIREBASE_PROJECT_ID": "",
+    "FIREBASE_API_KEY": "",
+    "ADMIN_IDENTITIES": "[]",
+  },
+  "main": "src/index.ts",
+  "compatibility_date": "2024-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "myriad_d1",
+      "database_id": "replace-with-your-d1-database-id",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "myriad-bucket",
+    },
+  ],
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true,
+  },
+}

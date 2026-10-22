@@ -2,21 +2,19 @@
 // Exports everything an exam analysis needs for any time range, read-only:
 // D1 rows, Cloudflare per-minute load and query statistics, and PostHog events.
 //
-//   node scripts/export-data.mjs --from "2026-10-20 13:20" --to "2026-10-20 15:30" [--exam ID]... [--out DIR] [--skip posthog,cloudflare,d1]
+//   node scripts/export-data.mjs --from "YYYY-MM-DD HH:MM" --to "YYYY-MM-DD HH:MM" [--config FILE] [--exam ID]... [--out DIR] [--skip posthog,cloudflare,d1]
 //
-// Times without an offset are Taipei time. Cloudflare access uses
-// CLOUDFLARE_API_TOKEN, or Wrangler's login. PostHog needs
-// POSTHOG_PERSONAL_API_KEY (scope: query:read); POSTHOG_PROJECT_ID and
-// POSTHOG_HOST default to Myriad's project. The output holds student IDs,
+// Times without an offset are Taipei time. Cloudflare access requires
+// CLOUDFLARE_API_TOKEN. PostHog requires POSTHOG_PERSONAL_API_KEY
+// (scope: query:read) and POSTHOG_PROJECT_ID; POSTHOG_HOST defaults to
+// the US API host. The output holds student IDs,
 // source code and IP addresses: keep it private.
 import {
   readFileSync,
   mkdirSync,
   createWriteStream,
   writeFileSync,
-  existsSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -30,11 +28,12 @@ const { values: args } = parseArgs({
     exam: { type: "string", multiple: true, default: [] },
     out: { type: "string" },
     skip: { type: "string", default: "" },
+    config: { type: "string" },
   },
 });
 if (!args.from || !args.to) {
   console.error(
-    'Usage: export-data.mjs --from "YYYY-MM-DD HH:MM" --to "YYYY-MM-DD HH:MM" [--exam ID]... [--out DIR] [--skip posthog,cloudflare,d1]',
+    'Usage: export-data.mjs --from "YYYY-MM-DD HH:MM" --to "YYYY-MM-DD HH:MM" [--config FILE] [--exam ID]... [--out DIR] [--skip posthog,cloudflare,d1]',
   );
   process.exit(1);
 }
@@ -50,6 +49,9 @@ const from = instant(args.from),
 if (to <= from) throw new Error("--to must be after --from");
 const exams = args.exam;
 const skip = new Set(args.skip.split(",").filter(Boolean));
+for (const source of skip)
+  if (!["d1", "cloudflare", "posthog"].includes(source))
+    throw new Error(`Unknown source in --skip: ${source}`);
 const stamp = (t) =>
   new Date(t + 8 * 3600_000)
     .toISOString()
@@ -67,64 +69,51 @@ const out = resolve(
       `${stamp(from)}_${stamp(to)}${exams.length ? `_${exams.join("+")}` : ""}`,
     ),
 );
-mkdirSync(out, { recursive: true });
-
 // Account, database and names come from the deployed Worker's configuration.
-const wrangler = JSON.parse(
-  readFileSync(join(here, "..", "wrangler.jsonc"), "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "")
-    .replace(/,(\s*[}\]])/g, "$1"),
-);
+const needsCloudflare = !skip.has("d1") || !skip.has("cloudflare");
+const configPath = args.config
+  ? resolve(args.config)
+  : join(here, "..", "wrangler.production.jsonc");
+const wrangler = needsCloudflare
+  ? JSON.parse(
+      readFileSync(configPath, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "")
+        .replace(/,(\s*[}\]])/g, "$1"),
+    )
+  : {};
 const account = wrangler.account_id;
-const database = wrangler.d1_databases[0].database_id;
-const bucket = wrangler.r2_buckets[0].bucket_name;
+const database = wrangler.d1_databases?.find(
+  (item) => item.binding === "DB",
+)?.database_id;
+const bucket = wrangler.r2_buckets?.find(
+  (item) => item.binding === "BUCKET",
+)?.bucket_name;
 const script = wrangler.name;
-
-function cloudflareToken() {
-  if (process.env.CLOUDFLARE_API_TOKEN) return process.env.CLOUDFLARE_API_TOKEN;
-  const files = [
-    join(homedir(), ".wrangler", "config", "default.toml"),
-    join(
-      homedir(),
-      "Library",
-      "Preferences",
-      ".wrangler",
-      "config",
-      "default.toml",
-    ),
-  ];
-  const file = files.find((f) => existsSync(f));
-  if (!file)
+if (needsCloudflare) {
+  if (!/^[a-f0-9]{32}$/i.test(account ?? ""))
+    throw new Error("Set account_id in the deployment config.");
+  if (
+    !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(database ?? "") ||
+    database === "00000000-0000-0000-0000-000000000000"
+  )
+    throw new Error("Set the DB database_id in the deployment config.");
+  if (!bucket || !script)
     throw new Error(
-      "No Cloudflare credentials: set CLOUDFLARE_API_TOKEN or run `wrangler login`.",
+      "Set the Worker name and BUCKET bucket_name in the deployment config.",
     );
-  const read = () => {
-    const text = readFileSync(file, "utf8");
-    return {
-      token: text.match(/^oauth_token\s*=\s*"([^"]+)"/m)?.[1],
-      expires: Date.parse(
-        text.match(/^expiration_time\s*=\s*"([^"]+)"/m)?.[1] ?? "",
-      ),
-    };
-  };
-  let login = read();
-  // An expired login is refreshed by any authenticated Wrangler command.
-  if (!login.token || !(login.expires > Date.now() + 60_000)) {
-    execFileSync("npx", ["wrangler", "whoami"], {
-      cwd: join(here, ".."),
-      stdio: "ignore",
-    });
-    login = read();
-  }
-  return login.token;
+  if (!process.env.CLOUDFLARE_API_TOKEN)
+    throw new Error(
+      "Set CLOUDFLARE_API_TOKEN with read access to the exported resources.",
+    );
 }
+mkdirSync(out, { recursive: true, mode: 0o700 });
 
 const files = {};
 function writer(name) {
   const path = join(out, name);
-  mkdirSync(dirname(path), { recursive: true });
-  const stream = createWriteStream(path);
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const stream = createWriteStream(path, { mode: 0o600 });
   files[name] = 0;
   return {
     write(row) {
@@ -136,8 +125,8 @@ function writer(name) {
 }
 function save(name, value) {
   const path = join(out, name);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
   files[name] = Array.isArray(value) ? value.length : 1;
 }
 
@@ -310,14 +299,16 @@ async function exportCloudflare() {
 // PostHog events through HogQL, oldest first.
 async function exportPostHog() {
   const key = process.env.POSTHOG_PERSONAL_API_KEY;
-  if (!key) {
-    console.warn(
-      "  Skipped: set POSTHOG_PERSONAL_API_KEY (scope query:read) to include PostHog events.",
+  if (!key)
+    throw new Error(
+      "Set POSTHOG_PERSONAL_API_KEY (scope query:read), or use --skip posthog.",
     );
-    return;
-  }
   const host = process.env.POSTHOG_HOST ?? "https://us.posthog.com";
-  const project = process.env.POSTHOG_PROJECT_ID ?? "660777";
+  if (new URL(host).protocol !== "https:")
+    throw new Error("POSTHOG_HOST must use HTTPS.");
+  const project = process.env.POSTHOG_PROJECT_ID;
+  if (!/^\d+$/.test(project ?? ""))
+    throw new Error("Set POSTHOG_PROJECT_ID to your PostHog project ID.");
   const events = writer("posthog/events.jsonl");
   const iso = (t) => new Date(t).toISOString().replace("T", " ").slice(0, 23);
   const examClause = exams.length
@@ -363,8 +354,7 @@ async function exportPostHog() {
   await events.close();
 }
 
-const cfToken =
-  skip.has("d1") && skip.has("cloudflare") ? null : cloudflareToken();
+const cfToken = process.env.CLOUDFLARE_API_TOKEN;
 const sources = {
   d1: exportD1,
   cloudflare: exportCloudflare,

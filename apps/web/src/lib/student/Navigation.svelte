@@ -31,7 +31,8 @@
       | "started"
       | "student"
       | "identityLabel"
-      | "studentInput"
+      | "studentLabel"
+      | "openIdentity"
       | "workspace"
     >;
   } = $props();
@@ -74,13 +75,8 @@
     onclick={() => session.navigate("/teacher")}
     ><LayoutDashboard size={21} /></IconButton
   >
-  <IconButton
-    class="avatar"
-    label="切換身分"
-    onclick={() => {
-      session.studentInput = session.student;
-      session.showIdentity = true;
-    }}><UserRound size={19} /></IconButton
+  <IconButton class="avatar" label="切換身分" onclick={session.openIdentity}
+    ><UserRound size={19} /></IconButton
   >
 </nav>
 <aside
@@ -122,10 +118,8 @@
     <div class="sidebar-bottom">
       <span>目前身分</span><button
         class="ph-no-capture"
-        onclick={() => {
-          session.studentInput = session.student;
-          session.showIdentity = true;
-        }}>{session.student || "選擇身分"}</button
+        onclick={session.openIdentity}
+        >{session.studentLabel || "選擇身分"}</button
       ><small>{session.identityLabel}</small>
     </div>
   {:else if session.eid && !session.error}<div

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { identityLabel } from "@myriad/shared";
   import type { StudentSession } from "../state/student.svelte";
   import Dialog from "../ui/Dialog.svelte";
   import { LogIn, UserRound } from "lucide-svelte";
@@ -11,26 +12,29 @@
       | "studentInput"
       | "identityKind"
       | "student"
-      | "nycuEnabled"
+      | "providers"
+      | "studentLabel"
       | "authBusy"
       | "busy"
       | "useGuest"
-      | "loginNYCU"
+      | "login"
       | "error"
     >;
   } = $props();
 </script>
 
 <Dialog title="作答身分" bind:open={session.showIdentity}>
-  {#if session.identityKind === "nycu"}<p class="ph-no-capture">
-      NYCU · {session.student}
-    </p>{/if}
+  {#if session.identityKind !== "guest"}<div class="ph-no-capture account">
+      <p>{identityLabel(session.identityKind)} · {session.studentLabel}</p>
+      <p>帳號識別：<code>{session.student}</code></p>
+    </div>{/if}
   {#if session.error}<p class="error" role="alert">{session.error}</p>{/if}
-  {#if session.nycuEnabled}<button
+  {#each session.providers as provider}<button
       class="oauth"
       disabled={session.busy || session.authBusy}
-      onclick={session.loginNYCU}><LogIn size={18} />使用 NYCU 帳號登入</button
-    >{/if}
+      onclick={() => session.login(provider)}
+      ><LogIn size={18} />使用 {identityLabel(provider)} 帳號登入</button
+    >{/each}
   <form
     onsubmit={(event) => {
       event.preventDefault();
@@ -53,7 +57,8 @@
         class="primary"
         disabled={session.authBusy ||
           session.busy ||
-          !session.studentInput.trim()}>以訪客身分作答</button
+          !session.studentInput.trim() ||
+          session.studentInput.trim().length > 64}>以訪客身分作答</button
       >
     </div>
   </form>
@@ -78,6 +83,9 @@
   .toolbar {
     justify-content: flex-end;
     margin-bottom: 0;
+  }
+  .account code {
+    overflow-wrap: anywhere;
   }
   p {
     font-size: 13px;

@@ -1,19 +1,21 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, untrack } from "svelte";
   import { api } from "../api";
   import { reportError, track } from "../posthog";
   let {
     scope,
+    initialProvider,
     examId,
     onchanged,
   }: {
     scope: "creation" | "exam";
+    initialProvider: string;
     examId?: string;
     onchanged?: () => Promise<void>;
   } = $props();
   type Member = { id: string; provider: string; subject: string; name: string };
   let members = $state<Member[]>([]),
-    provider = $state("nycu"),
+    provider = $state(untrack(() => initialProvider)),
     subject = $state(""),
     busy = $state(false),
     error = $state("");
@@ -125,15 +127,19 @@
     <label
       >帳號識別<input
         required
-        maxlength="256"
+        maxlength={provider === "google" ? 255 : 256}
         bind:value={subject}
-        placeholder="NYCU 使用 username，區分大小寫"
+        aria-describedby={`identity-help-${scope}`}
       /></label
     >
     <button disabled={busy || !subject.trim() || !provider.trim()}
       >{scope === "creation" ? "授予建立許可" : "邀請共同管理"}</button
     >
   </form>
+  <p id={`identity-help-${scope}`} class="muted">
+    NYCU 使用 username，區分大小寫；Google
+    使用帳號識別。可請對方登入後，從「帳號與權限」複製。
+  </p>
 </section>
 
 <style>

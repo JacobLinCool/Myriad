@@ -56,11 +56,18 @@ it("creating a submission always reads the exam fresh", async () => {
   const env = { DB: db.DB } as unknown as Env;
   await app.request("/api/exams/cache-write", {}, env);
   expect(db.reads.exam).toBe(1);
-  // The request fails later for lack of a real database; the exam read is what matters.
-  await app.request(
+  // A malformed attempt still needs a fresh exam read before validation.
+  const pending: Promise<unknown>[] = [];
+  const response = await app.request(
     "/api/exams/cache-write/attempts",
     { method: "POST", body: "{}" },
     env,
+    {
+      waitUntil: (promise: Promise<unknown>) => pending.push(promise),
+      passThroughOnException() {},
+    },
   );
+  await Promise.all(pending);
+  expect(response.status).toBe(400);
   expect(db.reads.exam).toBe(2);
 });

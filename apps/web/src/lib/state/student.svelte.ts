@@ -1,5 +1,12 @@
 import { onMount, onDestroy } from "svelte";
-import type { PublicExam, AttemptSummary } from "@myriad/shared";
+import {
+  identityLabel,
+  type AuthProvider,
+  type IdentityKind,
+  type PublicExam,
+  type AttemptSummary,
+} from "@myriad/shared";
+import { loginFailure, loginUrl } from "../auth";
 import { api } from "../api";
 import {
   identify,
@@ -45,11 +52,13 @@ export class StudentSession {
   /** Any route request is in flight, including revalidation of visible data. */
   refreshing = $state(false);
   student = $state(localStorage.getItem("myriad_student_id") ?? "");
-  identityKind = $state<"guest" | "nycu">("guest");
-  nycuEnabled = $state(false);
+  identityKind = $state<IdentityKind>("guest");
+  providers = $state<AuthProvider[]>([]);
+  displayName = $state("");
+  studentLabel = $derived(this.displayName || this.student);
   authBusy = $state(false);
   authReady = $state(false);
-  identityLabel = $derived(this.identityKind === "nycu" ? "NYCU" : "訪客");
+  identityLabel = $derived(identityLabel(this.identityKind));
   participantId = $derived(`${this.identityKind}:${this.student}`);
   studentInput = $state(this.student);
   showIdentity = $state(false);
@@ -400,6 +409,7 @@ export class StudentSession {
     const operation = this.summaries.begin(),
       exam = this.exam,
       student = this.student,
+      identityKind = this.identityKind,
       version = this.version;
     if (!student || !exam || !this.started || this.now >= exam.endsAt) {
       this.history = [];
@@ -409,6 +419,7 @@ export class StudentSession {
       operation.current() &&
       version === this.version &&
       this.student === student &&
+      this.identityKind === identityKind &&
       this.exam?.id === exam.id;
     this.historyBusy = true;
     try {
@@ -421,7 +432,7 @@ export class StudentSession {
           hasMore: boolean;
         }>(
           this.scoped(
-            `/api/exams/${exam.id}/submissions?student=${encodeURIComponent(student)}&identityKind=${this.identityKind}&after=${after}`,
+            `/api/exams/${exam.id}/submissions?student=${encodeURIComponent(student)}&identityKind=${identityKind}&after=${after}`,
             exam.id,
           ),
           "GET",
@@ -451,29 +462,49 @@ export class StudentSession {
     this.exam?.id === id &&
     this.problem?.id === pid &&
     this.student === sid;
-  loginNYCU = () => {
-    if (this.busy || !this.save()) return;
-    track("login_started", { provider: "nycu" });
+  login = (provider: AuthProvider) => {
+    if (
+      this.busy ||
+      this.authBusy ||
+      !this.providers.includes(provider) ||
+      !this.save()
+    )
+      return;
+    track("login_started", { provider });
     location.assign(
-      `/api/auth/nycu/start?returnTo=${encodeURIComponent(this.path.startsWith("/exams") ? this.path : "/exams")}`,
+      loginUrl(provider, this.path.startsWith("/exams") ? this.path : "/exams"),
     );
+  };
+  openIdentity = () => {
+    if (this.identityKind === "guest") this.studentInput = this.student;
+    this.showIdentity = true;
   };
   refreshIdentity = async () => {
     const operation = this.authentication.begin();
     try {
       const result = await this.request<{
-        nycuEnabled: boolean;
-        account: { analyticsId: string; label: string; kind: "nycu" } | null;
+        providers: AuthProvider[];
+        account: {
+          analyticsId: string;
+          label: string;
+          displayName: string;
+          kind: AuthProvider;
+        } | null;
       }>("/api/auth/session", "GET", undefined, operation);
       if (!operation.current()) return;
-      this.nycuEnabled = result.nycuEnabled;
+      this.providers = result.providers;
       if (result.account) {
         this.student = result.account.label;
-        this.identityKind = "nycu";
+        this.identityKind = result.account.kind;
+        this.displayName = result.account.displayName;
         identify(result.account.analyticsId, {
-          provider: "nycu",
+          provider: result.account.kind,
           is_student: true,
         });
+      } else {
+        this.identityKind = "guest";
+        this.displayName = "";
+        this.student = localStorage.getItem("myriad_student_id") ?? "";
       }
       this.authReady = true;
     } catch (e) {
@@ -484,7 +515,13 @@ export class StudentSession {
     }
   };
   useGuest = async () => {
-    if (this.authBusy || this.busy || !this.studentInput.trim() || !this.save())
+    if (
+      this.authBusy ||
+      this.busy ||
+      !this.studentInput.trim() ||
+      this.studentInput.trim().length > 64 ||
+      !this.save()
+    )
       return;
     const operation = this.authentication.begin();
     this.authBusy = true;
@@ -508,7 +545,7 @@ export class StudentSession {
   identity = () => {
     if (!this.save()) return;
     const student = this.studentInput.trim();
-    if (!student) return;
+    if (!student || student.length > 64) return;
     try {
       localStorage.setItem("myriad_student_id", student);
     } catch (e) {
@@ -517,6 +554,7 @@ export class StudentSession {
     }
     ++this.version;
     this.identityKind = "guest";
+    this.displayName = "";
     this.student = student;
     this.loadDraft();
     this.showIdentity = false;
@@ -575,18 +613,17 @@ export class StudentSession {
       await this.load();
       if (this.disposed) return;
       if (identityError) this.error = identityError;
-      const params = new URLSearchParams(location.search),
-        authError = params.get("auth_error"),
-        expected = params.get("expected") ?? "";
-      if (authError) {
-        track("login_failed", { provider: "nycu", reason: authError });
+      const failure =
+        this.parts[0] === "teacher"
+          ? null
+          : loginFailure(new URLSearchParams(location.search));
+      if (failure) {
+        track("login_failed", {
+          provider: failure.provider,
+          reason: failure.reason,
+        });
         this.showIdentity = true;
-        this.error =
-          authError === "cancelled"
-            ? "已取消 NYCU 登入，可重新登入或使用訪客作答。"
-            : authError === "origin"
-              ? `這個網址無法完成 NYCU 登入，請改用 ${/^https?:\/\/[\w.-]+(:\d+)?$/.test(expected) ? expected : "本站正式網址"} 開啟，或使用訪客作答。`
-              : "NYCU 登入未完成，請重試或使用訪客作答。";
+        this.error = `${failure.message}或使用訪客作答。`;
         window.history.replaceState({}, "", this.path);
       }
     });

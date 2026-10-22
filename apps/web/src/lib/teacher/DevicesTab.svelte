@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { identityLabel } from "@myriad/shared";
   import { api } from "../api";
   import { date } from "../format";
   import type { createTeacherSession } from "../state/teacher.svelte";
@@ -41,8 +42,6 @@
     run: "程式執行",
     submission: "正式提交",
   };
-  const identityLabel = (kind: "guest" | "nycu") =>
-    kind === "nycu" ? "NYCU" : "訪客";
   const span = (d: { firstSeenAt: number; lastSeenAt: number }) =>
     d.firstSeenAt === d.lastSeenAt
       ? date(d.firstSeenAt)

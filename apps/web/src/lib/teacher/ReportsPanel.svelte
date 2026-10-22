@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { identityLabel } from "@myriad/shared";
   import Collapsible from "../ui/Collapsible.svelte";
   import type { Reports } from "./data";
   let { reports }: { reports: Reports } = $props();
@@ -22,11 +23,9 @@
         <table>
           <thead><tr><th>學號</th><th>複判分數</th></tr></thead><tbody
             >{#each r.scores as s}<tr
-                ><td
-                  >{s.studentId} · {s.identityKind === "nycu"
-                    ? "NYCU"
-                    : "訪客"}</td
-                ><td>{s.totalScore.toFixed(2)}</td></tr
+                ><td>{s.studentId} · {identityLabel(s.identityKind)}</td><td
+                  >{s.totalScore.toFixed(2)}</td
+                ></tr
               >{/each}</tbody
           >
         </table>

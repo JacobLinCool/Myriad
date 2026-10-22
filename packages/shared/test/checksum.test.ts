@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { normalizeOutput, sha256Hex, innerDigest, boundChecksum } from "../src/checksum.js";
+import {
+  normalizeOutput,
+  sha256Hex,
+  innerDigest,
+  boundChecksum,
+} from "../src/checksum.js";
 
 describe("normalizeOutput", () => {
   it("trims trailing spaces from lines and removes trailing blank lines in trim mode", () => {
@@ -20,14 +25,28 @@ describe("normalizeOutput", () => {
 });
 
 describe("sha256Hex", () => {
+  it("hashes only the bytes in a view, including an empty view", async () => {
+    const bytes = new TextEncoder().encode("prefix:hello\n:suffix");
+    expect(await sha256Hex(bytes.subarray(7, 13))).toBe(
+      "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+    );
+    expect(await sha256Hex(bytes.subarray(7, 7))).toBe(
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    );
+  });
+
   it("calculates known sha256 vectors", async () => {
     // sha256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
     const emptyHash = await sha256Hex("");
-    expect(emptyHash).toBe("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    expect(emptyHash).toBe(
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    );
 
     // sha256("hello\n") = 5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03
     const helloHash = await sha256Hex("hello\n");
-    expect(helloHash).toBe("5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03");
+    expect(helloHash).toBe(
+      "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+    );
   });
 });
 

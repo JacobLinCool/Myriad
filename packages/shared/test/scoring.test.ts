@@ -44,10 +44,38 @@ describe("computeGroupVerdicts", () => {
 describe("selectBestSubmission", () => {
   it("selects submission with highest groupsPassed, breaking ties with earlier submission", () => {
     const subs = [
-      { id: "sub-1", problemId: "p1", studentId: "s1", groupsPassed: 1, groupsTotal: 3, createdAt: 100 },
-      { id: "sub-2", problemId: "p1", studentId: "s1", groupsPassed: 3, groupsTotal: 3, createdAt: 200 },
-      { id: "sub-3", problemId: "p1", studentId: "s1", groupsPassed: 3, groupsTotal: 3, createdAt: 300 },
-      { id: "sub-4", problemId: "p1", studentId: "s1", groupsPassed: 2, groupsTotal: 3, createdAt: 400 },
+      {
+        id: "sub-1",
+        problemId: "p1",
+        studentId: "s1",
+        groupsPassed: 1,
+        groupsTotal: 3,
+        createdAt: 100,
+      },
+      {
+        id: "sub-2",
+        problemId: "p1",
+        studentId: "s1",
+        groupsPassed: 3,
+        groupsTotal: 3,
+        createdAt: 200,
+      },
+      {
+        id: "sub-3",
+        problemId: "p1",
+        studentId: "s1",
+        groupsPassed: 3,
+        groupsTotal: 3,
+        createdAt: 300,
+      },
+      {
+        id: "sub-4",
+        problemId: "p1",
+        studentId: "s1",
+        groupsPassed: 2,
+        groupsTotal: 3,
+        createdAt: 400,
+      },
     ];
 
     const best = selectBestSubmission(subs);

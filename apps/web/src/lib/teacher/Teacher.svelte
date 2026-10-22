@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { identityLabel } from "@myriad/shared";
+  import { loginFailure, loginUrl } from "../auth";
+  import { track } from "../posthog";
   import { onMount, onDestroy } from "svelte";
   import { LoaderCircle, UserRound } from "lucide-svelte";
   import TeacherExams from "./TeacherExams.svelte";
@@ -7,7 +10,15 @@
   import { createTeacherSession } from "../state/teacher.svelte";
   import { parseTeacherRoute } from "../state/routes";
   import { follow, type Navigate } from "./link";
-  let { path, navigate }: { path: string; navigate: Navigate } = $props();
+  let {
+    path,
+    navigate,
+    onIdentityChange,
+  }: {
+    path: string;
+    navigate: Navigate;
+    onIdentityChange: () => Promise<void>;
+  } = $props();
   const session = createTeacherSession();
   const route = $derived(
     parseTeacherRoute(path.split("/").filter(Boolean)) ?? {
@@ -27,8 +38,16 @@
   );
   let loginError = $state("");
   onMount(() => {
-    if (new URLSearchParams(location.search).has("auth_error"))
-      loginError = "登入未完成，請使用本站正式登入網址重試。";
+    const failure = loginFailure(new URLSearchParams(location.search));
+    if (failure) {
+      loginError = failure.message;
+      track("login_failed", {
+        provider: failure.provider,
+        reason: failure.reason,
+        app_area: "teacher",
+      });
+      window.history.replaceState({}, "", location.pathname);
+    }
     void session.load();
   });
   onDestroy(session.destroy);
@@ -57,8 +76,12 @@
           aria-current={route.view === "account" ? "page" : undefined}
           onclick={(e) => follow(e, "/teacher/account", navigate)}
           ><UserRound size={14} />帳號與權限</a
-        ><button disabled={session.authenticating} onclick={session.logout}
-          >登出</button
+        ><button
+          disabled={session.authenticating}
+          onclick={async () => {
+            await session.logout();
+            await onIdentityChange();
+          }}>登出</button
         >
       </div>{/if}
   </header>
@@ -71,10 +94,15 @@
       <span class="skeleton field"></span>
     </div>
   {:else if !session.loggedIn}
-    {#if session.access?.nycuEnabled}<a
-        class="oauth-login"
-        href="/api/auth/nycu/start?returnTo=%2Fteacher">使用 NYCU 帳號登入</a
-      >{/if}
+    <div class="oauth-providers">
+      {#each session.access?.providers ?? [] as provider}<a
+          class="oauth-login"
+          href={loginUrl(provider, "/teacher")}
+          onclick={() =>
+            track("login_started", { provider, app_area: "teacher" })}
+          >使用 {identityLabel(provider)} 帳號登入</a
+        >{/each}
+    </div>
     <form
       class="login-form"
       onsubmit={(e) => {
@@ -141,6 +169,11 @@
   .account-actions a:hover,
   .account-actions a[aria-current="page"] {
     color: var(--text);
+  }
+  .oauth-providers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
   }
   .oauth-login {
     display: inline-block;

@@ -2,13 +2,18 @@ import { measure, type Recorder } from "./telemetry";
 import { updateStatus } from "./engine-status";
 import { reportError, track } from "./posthog";
 export { onEngineStatus, type EngineStatus } from "./engine-status";
-import { createBrowserEngine, type Engine } from "@wasm-oj/browser";
+import {
+  createBrowserEngine,
+  type Engine,
+  type BuildArtifact,
+} from "@wasm-oj/browser";
 import { browserSource as clangSource } from "@wasm-oj/toolchain-clang";
 import {
   createRunConfig,
   classifyTermination,
   innerDigest,
   boundChecksum,
+  type IdentityKind,
   type ProblemLimits,
   type ProblemPublic,
   type TestClaim,
@@ -55,7 +60,7 @@ export async function getEngine(record: Recorder): Promise<Engine> {
 
 export interface CompileResult {
   success: boolean;
-  artifact?: any;
+  artifact?: BuildArtifact;
   diagnostics: string;
   stdout: string;
   stderr: string;
@@ -86,8 +91,8 @@ export async function compileCode(
 
   const diagText = (build.diagnostics ?? [])
     .map(
-      (d: any) =>
-        `${d.severity.toUpperCase()}: ${d.message}${d.location ? ` at line ${d.location.line}` : ""}`,
+      (d) =>
+        `${d.severity.toUpperCase()}: ${d.message} at ${d.file}:${d.line}:${d.column}`,
     )
     .join("\n");
 
@@ -110,7 +115,7 @@ export interface RunLocalOutput {
 }
 
 export async function runLocal(
-  artifact: any,
+  artifact: BuildArtifact,
   stdin: string,
   limits: ProblemLimits,
   record: Recorder,
@@ -230,10 +235,10 @@ export async function fetchTestInput(
 
 export interface StreamJudgeOptions {
   record: Recorder;
-  artifact: any;
+  artifact: BuildArtifact;
   problem: ProblemPublic;
   studentId: string;
-  identityKind: "guest" | "nycu";
+  identityKind: IdentityKind;
   deviceId: string;
   code: string;
   examId: string;

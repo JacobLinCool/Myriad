@@ -17,6 +17,8 @@ export interface Env {
   APP_ORIGIN?: string;
   NYCU_CLIENT_ID?: string;
   NYCU_CLIENT_SECRET?: string;
+  FIREBASE_PROJECT_ID?: string;
+  FIREBASE_API_KEY?: string;
   ATTEMPT_SECRET: string;
   /** Milliseconds read paths may reuse an exam row; tests set "0". */
   EXAM_CACHE_MS?: string;

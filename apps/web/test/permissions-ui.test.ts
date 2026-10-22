@@ -18,7 +18,11 @@ it("validates provider identities and submits an exam-scoped invitation", async 
     async () => new Response(JSON.stringify([]), { status: 200 }),
   );
   vi.stubGlobal("fetch", fetcher);
-  render(PermissionEditor, { scope: "exam", examId: "exam-one" });
+  render(PermissionEditor, {
+    scope: "exam",
+    examId: "exam-one",
+    initialProvider: "nycu",
+  });
   await waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
   const provider = screen.getByLabelText("登入服務") as HTMLInputElement;
   const subject = screen.getByLabelText("帳號識別") as HTMLInputElement;
@@ -47,4 +51,19 @@ it("validates provider identities and submits an exam-scoped invitation", async 
       }),
     ),
   );
+});
+
+it("starts with the configured Google provider and explains its immutable identifier", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("[]", { status: 200 })),
+  );
+  render(PermissionEditor, { scope: "creation", initialProvider: "google" });
+  expect((screen.getByLabelText("登入服務") as HTMLInputElement).value).toBe(
+    "google",
+  );
+  expect(
+    (screen.getByLabelText("帳號識別") as HTMLInputElement).maxLength,
+  ).toBe(255);
+  expect(screen.getByText(/Google 使用帳號識別/)).not.toBeNull();
 });

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { MonitoredSubmission } from "@myriad/shared";
+import type { MonitoredSubmission, IdentityKind } from "@myriad/shared";
 import { exam, fail, manifest, type AppContext, type Env } from "./core.js";
 import { purgePreview } from "./attempts.js";
 /**
@@ -134,7 +134,7 @@ monitor.get("/api/teacher/exams/:eid/students", async (c) => {
     n: number;
     participantId: string;
     studentId: string;
-    identityKind: "guest" | "nycu";
+    identityKind: IdentityKind;
   }>([
     c.env.DB.prepare(
       `SELECT COUNT(DISTINCT participant_id) AS n FROM attempts WHERE exam_id=? AND preview=0${search?.[0] ?? ""}`,

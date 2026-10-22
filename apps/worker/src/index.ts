@@ -2,7 +2,11 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { bodyLimit } from "hono/body-limit";
 import { ZodError } from "zod";
-import { TelemetryBatchSchema, ProblemPublicSchema } from "@myriad/shared";
+import {
+  IdentityKindSchema,
+  TelemetryBatchSchema,
+  ProblemPublicSchema,
+} from "@myriad/shared";
 import {
   cachedExam,
   cachedExamList,
@@ -111,8 +115,7 @@ app.get("/api/exams/:eid/submissions", async (c) => {
   if (!(await examOpen(c, e))) fail("Exam is not active", 403);
   const preview = await previewing(c, e);
   if (!student) fail("Student ID required");
-  const kind = c.req.query("identityKind");
-  if (kind !== "guest" && kind !== "nycu") fail("Identity kind required");
+  const kind = IdentityKindSchema.parse(c.req.query("identityKind"));
   const participant = await requireParticipant(c, kind, student);
   await c.env.DB.prepare(
     `UPDATE attempts SET status='expired' WHERE exam_id=? AND status='running' AND expires_at<=?
@@ -158,7 +161,9 @@ app.post("/api/telemetry", bodyLimit({ maxSize: 32768 }), async (c) => {
         JSON.stringify({
           ...e,
           identityVerified:
-            e.identityKind === "nycu" && account?.username === e.studentId,
+            e.identityKind !== "guest" &&
+            account?.provider === e.identityKind &&
+            account.subject === e.studentId,
         }),
       ),
     ),

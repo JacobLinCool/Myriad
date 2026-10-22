@@ -1,5 +1,6 @@
 import { createServerEngine } from "@wasm-oj/server";
 import type { Engine } from "@wasm-oj/core";
+import type { BuildArtifact } from "@wasm-oj/contracts";
 import { serverSource as clangSource } from "@wasm-oj/toolchain-clang";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -64,9 +65,11 @@ export interface WasmOjExecutionResult {
 /**
  * Compiles C source code using @wasm-oj/server engine.
  */
-export async function compileCode(
-  code: string,
-): Promise<{ success: boolean; artifact?: any; diagnostics: string }> {
+export async function compileCode(code: string): Promise<{
+  success: boolean;
+  artifact?: BuildArtifact;
+  diagnostics: string;
+}> {
   const engine = await getServerEngine();
 
   const build = await engine.compile({
@@ -79,8 +82,8 @@ export async function compileCode(
 
   const diagnostics = (build.diagnostics ?? [])
     .map(
-      (d: any) =>
-        `${d.severity.toUpperCase()}: ${d.message}${d.location ? ` at line ${d.location.line}` : ""}`,
+      (d) =>
+        `${d.severity.toUpperCase()}: ${d.message} at ${d.file}:${d.line}:${d.column}`,
     )
     .join("\n");
 
@@ -95,7 +98,7 @@ export async function compileCode(
  * Runs a compiled @wasm-oj artifact with deterministic limits.
  */
 export async function runArtifact(
-  artifact: any,
+  artifact: BuildArtifact,
   stdin: string,
   limits: ProblemLimits,
 ): Promise<WasmOjExecutionResult> {
@@ -112,27 +115,4 @@ export async function runArtifact(
     termination: term === "ok" ? "exited" : term,
     code: result.code,
   };
-}
-
-/**
- * Compiles and runs C code end-to-end using @wasm-oj/server.
- */
-export async function compileAndRun(
-  code: string,
-  stdin: string,
-  limits: ProblemLimits,
-): Promise<WasmOjExecutionResult> {
-  const build = await compileCode(code);
-  if (!build.success || !build.artifact) {
-    return {
-      success: false,
-      stdout: "",
-      stderr: build.diagnostics || "Compilation failed",
-      durationMs: 0,
-      termination: "re",
-      code: 1,
-    };
-  }
-
-  return runArtifact(build.artifact, stdin, limits);
 }

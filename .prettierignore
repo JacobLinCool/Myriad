@@ -1,0 +1,5 @@
+# Dependency lockfile is maintained by pnpm.
+pnpm-lock.yaml
+
+# Exam fixtures preserve their authored formatting and expected output.
+examples/

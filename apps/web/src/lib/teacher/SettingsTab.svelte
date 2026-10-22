@@ -14,6 +14,7 @@
 
 <ExamDetail {detail} saving={session.saving} onsave={session.saveSettings} />
 {#if detail.canManageMembers}<PermissionEditor
+    initialProvider={session.access?.providers[0] ?? ""}
     scope="exam"
     examId={detail.id}
   />{/if}

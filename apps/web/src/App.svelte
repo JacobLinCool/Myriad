@@ -63,6 +63,9 @@
       {#if teacher.current}<teacher.current.default
           path={session.path}
           navigate={session.navigate}
+          onIdentityChange={async () => {
+            await session.refreshIdentity();
+          }}
         />{:else}<LoadingView kind="page" label="正在載入管理工作台…" />{/if}
     {:else if session.eid && (session.loading || (!session.exam && !session.error))}<LoadingView
         kind={session.section === "problems" ? "workspace" : "page"}

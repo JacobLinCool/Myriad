@@ -1,5 +1,9 @@
 import { Command } from "commander";
+import { readFileSync } from "node:fs";
 import * as workflow from "./workflow.js";
+const { version } = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+) as { version: string };
 const jsonMode = process.argv.includes("--json");
 const program = new Command()
   .exitOverride()
@@ -9,7 +13,7 @@ const program = new Command()
     },
   })
   .name("myriad")
-  .version("0.2.0")
+  .version(version)
   .description(
     "Myriad: local exam authoring, validation and publication for teachers and agents",
   )

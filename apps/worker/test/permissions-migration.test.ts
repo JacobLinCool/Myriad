@@ -1,12 +1,9 @@
 import { expect, it } from "vitest";
-import { Miniflare } from "miniflare";
+import { createTestRuntime } from "./runtime";
 import { readFile, readdir } from "node:fs/promises";
 it("migrates identities, ownership and credentials without losing referenced exam data", async () => {
-  const mf = new Miniflare({
-    modules: true,
+  const mf = createTestRuntime({
     script: "export default {fetch(){return new Response('ok')}}",
-    compatibilityDate: "2024-10-01",
-    d1Databases: ["DB"],
   });
   try {
     const db = await mf.getD1Database("DB");

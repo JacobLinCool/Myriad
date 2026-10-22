@@ -20,7 +20,8 @@
       | "showIdentity"
       | "student"
       | "identityLabel"
-      | "studentInput"
+      | "studentLabel"
+      | "openIdentity"
       | "workspace"
     >;
   } = $props();
@@ -63,10 +64,9 @@
 </header>
 {#if session.eid}<div class="compact-identity">
     <span>目前身分</span><button
-      onclick={() => {
-        session.studentInput = session.student;
-        session.showIdentity = true;
-      }}>{session.student || "尚未填寫"}</button
+      class="ph-no-capture"
+      onclick={session.openIdentity}
+      >{session.studentLabel || "尚未填寫"}</button
     ><small>{session.identityLabel}</small>
   </div>{/if}
 

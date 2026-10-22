@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DeviceIdSchema } from "./schema.js";
+import { IdentityKindSchema, validateStudentIdentity } from "./identity.js";
 
 const duration = z.number().finite().nonnegative().max(86_400_000);
 export const TelemetryEventSchema = z
@@ -9,8 +10,8 @@ export const TelemetryEventSchema = z
     operationId: z.string().uuid(),
     deviceId: DeviceIdSchema,
     examId: z.string().min(1).max(128),
-    identityKind: z.enum(["guest", "nycu"]),
-    studentId: z.string().min(1).max(64).nullable(),
+    identityKind: IdentityKindSchema,
+    studentId: z.string().min(1).max(255).nullable(),
     problemId: z.string().min(1).max(128).nullable(),
     attemptId: z.string().min(1).max(128).optional(),
     mode: z.enum(["startup", "local", "submission"]),
@@ -46,7 +47,8 @@ export const TelemetryEventSchema = z
     termination: z.string().max(64).optional(),
     exitCode: z.number().int().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine(validateStudentIdentity);
 export type TelemetryEvent = z.infer<typeof TelemetryEventSchema>;
 export const TelemetryBatchSchema = z
   .object({ events: z.array(TelemetryEventSchema).min(1).max(25) })

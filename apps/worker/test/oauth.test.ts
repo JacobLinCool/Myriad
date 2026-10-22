@@ -1,5 +1,6 @@
 import { beforeAll, afterAll, it, expect } from "vitest";
-import { Miniflare } from "miniflare";
+import type { Miniflare } from "miniflare";
+import { createTestRuntime } from "./runtime";
 import { build } from "esbuild";
 import { readFile, readdir } from "node:fs/promises";
 import { sha256Hex } from "@myriad/shared";
@@ -7,7 +8,7 @@ let mf: Miniflare, db: Awaited<ReturnType<Miniflare["getD1Database"]>>;
 let profileName = "same",
   tokenStatus = 200;
 
-const base = "https://judge.nycu.ai",
+const base = "https://judge.example.test",
   revision = "a".repeat(64),
   version = "b".repeat(64);
 function call(path: string, options: RequestInit = {}) {
@@ -55,12 +56,8 @@ beforeAll(async () => {
     platform: "browser",
     write: false,
   });
-  mf = new Miniflare({
-    modules: true,
+  mf = createTestRuntime({
     script: result.outputFiles[0].text,
-    compatibilityDate: "2024-10-01",
-    d1Databases: ["DB"],
-    r2Buckets: ["BUCKET"],
     outboundService: async (request) => {
       const url = new URL(request.url);
       expect(url.origin).toBe("https://id.nycu.edu.tw");
@@ -381,7 +378,7 @@ it("a login started from another address returns to the page with the expected o
   );
   expect(response.status).toBe(302);
   expect(response.headers.get("location")).toBe(
-    `/exams/quiz?auth_error=origin&expected=${encodeURIComponent(base)}`,
+    `/exams/quiz?auth_error=origin&auth_provider=nycu&expected=${encodeURIComponent(base)}`,
   );
   expect(response.headers.get("set-cookie")).toBeNull();
 });

@@ -5,3 +5,4 @@ export * from "./schema.js";
 export * from "./telemetry.js";
 export * from "./journey.js";
 export * from "./monitoring.js";
+export * from "./identity.js";

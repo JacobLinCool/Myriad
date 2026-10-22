@@ -1,3 +1,4 @@
+import type { AuthProvider, IdentityKind } from "@myriad/shared";
 import { api } from "../api";
 export interface ManagementAccess {
   account: {
@@ -10,7 +11,7 @@ export interface ManagementAccess {
   } | null;
   canCreateExams: boolean;
   isAdmin: boolean;
-  nycuEnabled: boolean;
+  providers: AuthProvider[];
 }
 export interface TeacherExam {
   ownerId: string;
@@ -83,7 +84,7 @@ export interface StudentPage {
   students: {
     participantId: string;
     studentId: string;
-    identityKind: "guest" | "nycu";
+    identityKind: IdentityKind;
     cells: Record<string, StudentCell>;
   }[];
 }
@@ -97,7 +98,7 @@ export interface ProblemSubmissions {
 export interface DeviceLink {
   deviceId: string;
   studentId: string;
-  identityKind: "guest" | "nycu";
+  identityKind: IdentityKind;
   submissions: number;
   firstSeenAt: number;
   lastSeenAt: number;
@@ -129,7 +130,7 @@ export interface Reports {
     uploadedAt: number;
     scores: {
       studentId: string;
-      identityKind: "guest" | "nycu";
+      identityKind: IdentityKind;
       totalScore: number;
     }[];
     report: { submissions: { classification: string }[] };

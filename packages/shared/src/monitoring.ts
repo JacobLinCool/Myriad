@@ -1,4 +1,5 @@
 import type { AttemptSummary } from "./journey.js";
+import type { IdentityKind } from "./identity.js";
 
 /** Compact teacher-only data. Resource measurements are provisional client reports. */
 export interface MonitoredSubmission {
@@ -6,7 +7,7 @@ export interface MonitoredSubmission {
   sequence: number;
   participantId: string;
   studentId: string;
-  identityKind: "guest" | "nycu";
+  identityKind: IdentityKind;
   problemId: string;
   problemVersion: string | null;
   status: AttemptSummary["status"];

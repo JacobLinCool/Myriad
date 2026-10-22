@@ -1,10 +1,18 @@
-ADMIN_TOKEN=replace-with-random-admin-secret
-ATTEMPT_SECRET=replace-with-at-least-32-random-characters
+# Generate two independent secrets, for example with `openssl rand -hex 32`.
+ADMIN_TOKEN=
+ATTEMPT_SECRET=
 APP_ORIGIN=http://localhost:8787
+# Optional NYCU login. Both credentials are required.
 NYCU_CLIENT_ID=
 NYCU_CLIENT_SECRET=
 
+# Optional Google login through Firebase Authentication. Both settings are required.
+# Enable Google in Firebase and register APP_ORIGIN/api/auth/google/callback on its Web OAuth client.
+FIREBASE_PROJECT_ID=
+FIREBASE_API_KEY=
+
 # Verified provider identities allowed to administer creation grants.
+# Copy Google subjects from Myriad account information, not email addresses or Firebase UIDs.
 ADMIN_IDENTITIES=[]
 
 # Required only for problems with semanticCheck. Store production key with Wrangler secrets.

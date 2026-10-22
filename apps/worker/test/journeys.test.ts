@@ -1,6 +1,7 @@
 import { cCostProfile } from "../../../packages/shared/test/fixtures/cost-profile.js";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
-import { Miniflare } from "miniflare";
+import type { Miniflare } from "miniflare";
+import { createTestRuntime } from "./runtime";
 import { build } from "esbuild";
 import { readFile, readdir } from "node:fs/promises";
 import {
@@ -203,12 +204,8 @@ beforeAll(async () => {
     platform: "browser",
     write: false,
   });
-  mf = new Miniflare({
-    modules: true,
+  mf = createTestRuntime({
     script: result.outputFiles[0].text,
-    compatibilityDate: "2024-10-01",
-    d1Databases: ["DB"],
-    r2Buckets: ["BUCKET"],
     outboundService: async (req) => {
       expect(req.url).toBe("https://api.openai.com/v1/responses");
       const body = (await req.json()) as any;

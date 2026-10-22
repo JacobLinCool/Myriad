@@ -65,23 +65,30 @@ async function save(file: string, value: unknown) {
   await fs.writeFile(temp, JSON.stringify(value, null, 2));
   await fs.rename(temp, file);
 }
+async function readDirectoryIfExists(dir: string) {
+  try {
+    return await fs.readdir(dir);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT")
+      return [];
+    throw error;
+  }
+}
 export async function initialize(dir: string) {
+  const now = Date.now();
+  const exam = ExamSettingsSchema.parse({
+    id: path.basename(path.resolve(dir)),
+    title: "程式設計考試",
+    startsAt: now + 86400000,
+    endsAt: now + 90000000,
+    rules: "請獨立完成作答。",
+    policy: "best",
+    salt: crypto.randomUUID(),
+  });
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(
     path.join(dir, "exam.json"),
-    JSON.stringify(
-      {
-        id: path.basename(path.resolve(dir)),
-        title: "程式設計考試",
-        startsAt: Date.now() + 86400000,
-        endsAt: Date.now() + 90000000,
-        rules: "請獨立完成作答。",
-        policy: "best",
-        salt: crypto.randomUUID(),
-      },
-      null,
-      2,
-    ),
+    JSON.stringify(exam, null, 2),
     { flag: "wx" },
   );
   const p = path.join(dir, "problems/aplusb");
@@ -330,7 +337,7 @@ export async function exportExam(
   const bundles = await Promise.all(data.bundles.map((b) => validateBundle(b)));
   const current = bundles.find((b) => b.revision === data.current);
   if (!current) throw new Error("Export does not contain the current upload");
-  const existing = await fs.readdir(dir).catch(() => [] as string[]);
+  const existing = await readDirectoryIfExists(dir);
   if (
     !options.force &&
     (existing.includes("exam.json") || existing.includes("problems"))
@@ -410,18 +417,16 @@ export async function exportExam(
   };
 }
 /** Bundles kept by `build`, by revision, for judging submissions made against them. */
-async function bundlesByRevision(dir: string) {
-  const bundles = new Map<string, ExamBundle>();
+async function bundlesByRevision(dir: string, current: ExamBundle) {
+  const bundles = new Map<string, ExamBundle>([[current.revision, current]]);
   const root = path.join(dir, ".myriad/bundles");
-  for (const file of await fs.readdir(root).catch(() => [] as string[])) {
+  for (const file of await readDirectoryIfExists(root)) {
     if (!file.endsWith(".json")) continue;
     const bundle = await validateBundle(
       JSON.parse(await fs.readFile(path.join(root, file), "utf8")),
     );
     bundles.set(bundle.revision, bundle);
   }
-  const current = await readBundle(dir).catch(() => null);
-  if (current) bundles.set(current.revision, current);
   return bundles;
 }
 export async function pull(dir: string, options: RemoteOptions) {
@@ -453,7 +458,7 @@ export async function pull(dir: string, options: RemoteOptions) {
     submissions,
   });
   const revisions = [...new Set(submissions.map((s) => s.revision))];
-  const local = await bundlesByRevision(dir);
+  const local = await bundlesByRevision(dir, b);
   return {
     snapshot,
     count: submissions.length,
@@ -515,7 +520,7 @@ export async function verify(dir: string) {
     );
   if (snapshot.examId !== b.content.exam.id)
     throw new Error("Snapshot belongs to another exam");
-  const bundles = await bundlesByRevision(dir);
+  const bundles = await bundlesByRevision(dir, b);
   const missing = [
     ...new Set(
       (snapshot.submissions as ExportSubmission[])

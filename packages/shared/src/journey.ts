@@ -8,6 +8,11 @@ import {
   TestVerdictSchema,
 } from "./schema.js";
 import { sha256Hex } from "./checksum.js";
+import {
+  IdentityKindSchema,
+  validateStudentIdentity,
+  type IdentityKind,
+} from "./identity.js";
 
 export const SlugSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/);
 export const DigestSchema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -184,12 +189,13 @@ export const AttemptRequestSchema = z
     operationId: z.string().uuid(),
     problemVersion: DigestSchema,
     problemId: SlugSchema,
-    studentId: z.string().trim().min(1).max(64),
-    identityKind: z.enum(["guest", "nycu"]),
+    studentId: z.string().trim().min(1).max(255),
+    identityKind: IdentityKindSchema,
     deviceId: DeviceIdSchema,
     code: z.string().min(1).max(65536),
   })
-  .strict();
+  .strict()
+  .superRefine(validateStudentIdentity);
 export type AttemptRequest = z.infer<typeof AttemptRequestSchema>;
 export const ClaimMessageSchema = z.discriminatedUnion("type", [
   z
@@ -233,7 +239,7 @@ export interface AttemptSummary {
   /** The problem version that judged it; null for attempts before versions existed. */
   problemVersion: string | null;
   studentId: string;
-  identityKind: "guest" | "nycu";
+  identityKind: IdentityKind;
   participantId: string;
   status: "running" | "complete" | "failed" | "expired";
   createdAt: number;

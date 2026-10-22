@@ -7,7 +7,9 @@ allowBuilds:
   sharp: true
   workerd: true
 minimumReleaseAgeExclude:
-  - '@wasm-oj/contracts@0.2.3'
-  - '@wasm-oj/core@0.2.3'
-  - '@wasm-oj/server@0.2.3'
-  - '@wasm-oj/browser@0.2.3'
+  - "@wasm-oj/contracts@0.2.3"
+  - "@wasm-oj/core@0.2.3"
+  - "@wasm-oj/server@0.2.3"
+  - "@wasm-oj/browser@0.2.3"
+  - miniflare@5.20261019.2-beta
+  - wrangler@4.152.0

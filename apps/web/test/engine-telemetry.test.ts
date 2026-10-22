@@ -17,9 +17,21 @@ it("captures compilation failures, cache hits, and distinct engine/elapsed execu
   engine.compile.mockResolvedValueOnce({
     success: false,
     cacheHit: false,
-    diagnostics: [],
+    diagnostics: [
+      {
+        severity: "error",
+        message: "expected ';'",
+        file: "main.c",
+        line: 3,
+        column: 8,
+        source: "clang",
+      },
+    ],
   });
-  expect((await compileCode("invalid", record)).success).toBe(false);
+  expect(await compileCode("invalid", record)).toMatchObject({
+    success: false,
+    diagnostics: "ERROR: expected ';' at main.c:3:8",
+  });
   expect(record).toHaveBeenCalledWith(
     expect.objectContaining({
       kind: "compile",

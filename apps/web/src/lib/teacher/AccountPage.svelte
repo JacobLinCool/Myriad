@@ -12,8 +12,8 @@
     <dd>{session.access?.account?.provider}</dd>
   </div>
   <div>
-    <dt>帳號</dt>
-    <dd>{session.access?.account?.subject}</dd>
+    <dt>帳號識別</dt>
+    <dd><code>{session.access?.account?.subject}</code></dd>
   </div>
   <div>
     <dt>權限</dt>
@@ -28,6 +28,7 @@
 </dl>
 <PersonalTokens />
 {#if session.access?.isAdmin}<PermissionEditor
+    initialProvider={session.access?.providers[0] ?? ""}
     scope="creation"
     onchanged={session.load}
   />{/if}
@@ -45,5 +46,6 @@
   }
   .facts dd {
     margin: 6px 0 0;
+    overflow-wrap: anywhere;
   }
 </style>

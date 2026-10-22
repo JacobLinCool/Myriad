@@ -2,8 +2,9 @@ import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 import { readFileSync } from "node:fs";
+import { bundleLicenses } from "./scripts/bundle-licenses.mjs";
 
-/** The local Worker listens on the origin configured for NYCU login. */
+/** The local Worker listens on the origin configured for OAuth login. */
 function workerOrigin() {
   try {
     const origin = readFileSync(
@@ -11,15 +12,15 @@ function workerOrigin() {
       "utf8",
     ).match(/^APP_ORIGIN=(.+)$/m)?.[1];
     if (origin) return new URL(origin.trim()).origin;
-  } catch {
-    // Fall back to Wrangler's default port.
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   return "http://localhost:8787";
 }
 const worker = workerOrigin();
 
 export default defineConfig({
-  plugins: [tailwindcss(), svelte()],
+  plugins: [tailwindcss(), svelte(), bundleLicenses()],
   server: {
     port: 5173,
     headers: {

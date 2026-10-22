@@ -1,6 +1,8 @@
 # 管理者與 Agent 本機操作手冊
 
-所有題目建置、標準解執行及考後複判都在管理者裝置進行。遠端只保存上傳的 bundle、目前生效的版本、學生的 checksum claims 與管理者內部複判報告，不替管理者做版本控制。
+所有題目建置、標準解執行及考後複判都在管理者裝置進行。遠端保存上傳的 bundle、目前生效的版本、學生程式快照、checksum claims 與管理者複判報告。本機題目原始檔仍由管理者自行備份與版本控制。
+
+開始前完成 [安裝與本機啟動](../README.md#安裝與本機啟動)，並執行 `pnpm --filter=@myriad/cli runtime:build` 準備原生 runtime。新環境的管理者帳號、建立許可及 CLI 憑證設定見 [NYCU 登入](nycu-oauth.md) 或 [Google 登入](google-oauth.md)。本文件的命令從 repository 根目錄執行，題目目錄放在相鄰的 `../midterm`，避免將正式考題加入公開程式庫。
 
 ## 完整週期
 
@@ -26,7 +28,7 @@
 ## 建立、設計與驗證
 
 ```sh
-node packages/cli/bin/myriad.js --json init ./midterm
+node packages/cli/bin/myriad.js --json init ../midterm
 ```
 
 產生結構：
@@ -46,13 +48,13 @@ midterm/
 每題 `problem.json` 包含 `title`、`order`、`normalize`、`limits`、`groups`、`sampleCases`。題目 ID 為資料夾名稱。`groups[].tests` 明確列出 `tests/` 中的檔名，不猜測其他檔案；每組通過其全部測試才得該組分數。敘述支援 Markdown 與數學式。`solution.c` 為管理者標準解。
 
 ```sh
-node packages/cli/bin/myriad.js --json build ./midterm
-node packages/cli/bin/myriad.js --json test ./midterm aplusb ./midterm/problems/aplusb/solution.c
+node packages/cli/bin/myriad.js --json build ../midterm
+node packages/cli/bin/myriad.js --json test ../midterm aplusb ../midterm/problems/aplusb/solution.c
 ```
 
 `build` 執行全部標準解測試與範例，失敗立即退出。成功產生 `.myriad/bundle.json`，包含設定、敘述、完整輸入、測試索引、expected digests、固定工具鏈與本機驗證報告，以 canonical JSON SHA-256 作為 revision（代表「這一次上傳」）。歷史 bundle 保存在 `.myriad/bundles/<revision>.json`；失敗的重建不留下可直接部署的 current bundle。
 
-`build` 另為每題計算 `version`：工具鏈、限制、輸出比對方式、子任務分組，以及每筆測資輸入與預期輸出摘要的 SHA-256。題敘、標題與範例不影響版本，所以修正錯字不會打斷學生；測資、預期輸出、限制或分組改變才會產生新版本。每筆提交記錄判題時使用的題目版本。
+`build` 另為每題計算 `version`：工具鏈、限制、輸出比對方式、子任務分組、實作要求，以及每筆測資輸入與預期輸出摘要的 SHA-256。題敘、標題與範例不影響版本，所以修正錯字不會打斷學生；測資、預期輸出、限制、分組或實作要求改變才會產生新版本。每筆提交記錄判題時使用的題目版本。
 
 `test` 使用 bundle 的完整內容驗證指定解答。來源檔變動不會改變既有 bundle；需要更新發布內容時重新 build。建議保留整個 `.myriad/bundles`，考後必須使用實際已發布版本複判。
 
@@ -60,7 +62,7 @@ node packages/cli/bin/myriad.js --json test ./midterm aplusb ./midterm/problems/
 
 ```sh
 node packages/cli/bin/myriad.js --json toolchain push --remote https://your-judge.example
-node packages/cli/bin/myriad.js --json deploy ./midterm --remote https://your-judge.example
+node packages/cli/bin/myriad.js --json deploy ../midterm --remote https://your-judge.example
 node packages/cli/bin/myriad.js --json status --exam midterm --remote https://your-judge.example
 ```
 
@@ -83,7 +85,7 @@ node packages/cli/bin/myriad.js --json status --exam midterm --remote https://yo
 ## 匯出後修改再上傳
 
 ```sh
-node packages/cli/bin/myriad.js --json export ./midterm --exam midterm --remote https://your-judge.example
+node packages/cli/bin/myriad.js --json export ../midterm --exam midterm --remote https://your-judge.example
 ```
 
 `export` 從網站還原可直接編輯的題目目錄：
@@ -92,14 +94,14 @@ node packages/cli/bin/myriad.js --json export ./midterm --exam midterm --remote 
 - 每題的 `problem.json`、`statement.md`、`solution.c` 與 `tests/`。
 - `.myriad/bundles/`：歷次上傳，換一台電腦也能考後複判。
 
-管理者也可以在管理工作台的「成績與匯出」分頁下載同一份題目包，再用 `export ./midterm --file <下載的檔案>` 展開。
+管理者也可以在管理工作台的「成績與匯出」分頁下載同一份題目包，再用 `export ../midterm --file <下載的檔案>` 展開。
 
 目錄已有考試時需加 `--force`，會取代 `exam.json` 與 `problems/`。回傳：
 
 - `settingsFromSite`：取自網站、與上傳時不同的欄位。
 - `missingSolutions`：缺少標準解的題目。
 
-`build` 會把各題 `solution.c` 一併放進 bundle，伺服器只保存、不執行，也不會提供給學生。較早的上傳沒有標準解，匯出後需補上 `solution.c` 才能重新 build。
+`build` 會把各題 `solution.c` 一併放進 bundle，伺服器只保存、不執行，也不會提供給學生。若 `missingSolutions` 非空，需補上相應的 `solution.c` 才能重新 build。
 
 重新 build 匯出的目錄，題目版本與網站上相同（測資、預期輸出與限制都相同）；revision 會改變，因為每次 build 都記錄完成時間。
 
@@ -109,16 +111,16 @@ node packages/cli/bin/myriad.js --json export ./midterm --exam midterm --remote 
 
 ## 考中監看
 
-瀏覽器 `/teacher` 登入後選擇考試，可查看提交／學號統計、下載／編譯／執行效能、錯誤比例、原始遙測匯出、提交快照匯出及同裝置多學號。統計中的學號均為自行填寫；不得把關聯或差異自動當成作弊結論。
+瀏覽器 `/teacher` 登入後選擇考試，可查看提交／學號統計、下載／編譯／執行效能、錯誤比例、原始遙測匯出、提交快照匯出及同裝置多學號。訪客學號為自行填寫，NYCU 與 Google 帳號來自已驗證的 session；Google 顯示名稱不是學號或權限識別。裝置與效能資料不能證明作答真實性，不得把關聯或差異自動當成作弊結論。
 
 ## 考後本機複判與內部檢視
 
 保留 `.myriad/bundles/`：考試中若曾多次 deploy，不同提交會對應不同的上傳。`pull` 回傳 `revisions` 與 `missingBundles`；`verify` 依每筆提交的 revision 使用當時的 bundle（測資、預期輸出與 salt），缺少任何一份會列出 revision 並停止。
 
 ```sh
-node packages/cli/bin/myriad.js --json pull ./midterm --remote https://your-judge.example
-node packages/cli/bin/myriad.js --json verify ./midterm
-node packages/cli/bin/myriad.js --json results upload ./midterm --remote https://your-judge.example
+node packages/cli/bin/myriad.js --json pull ../midterm --remote https://your-judge.example
+node packages/cli/bin/myriad.js --json verify ../midterm
+node packages/cli/bin/myriad.js --json results upload ../midterm --remote https://your-judge.example
 ```
 
 `pull` 以穩定序號游標與固定 snapshot 下載完整已完成提交，保存 `.myriad/submissions.json`。正式複判應在考試結束後 pull，避免仍在進行中的提交使報告過期。
@@ -140,7 +142,7 @@ node packages/cli/bin/myriad.js --json results upload ./midterm --remote https:/
 ## 一次完整本機驗收
 
 1. 使用獨立本機 D1/R2 目錄，套用所有 migrations，啟動 `wrangler dev --local --persist-to <directory>`。
-2. 建立測試管理帳號、上傳工具鏈，建立兩場含同題目 ID 的考試並發布。CLI 從 repository 根目錄執行，才能重用 `.wasm-oj-cache`；冷快取首次編譯可能超過 60 秒逾時。
+2. 以已啟用的 NYCU 或 Google 登入測試管理帳號，授予建立許可並建立個人 CLI 憑證；以平台憑證上傳工具鏈，建立兩場含同題目 ID 的考試並發布。CLI 從 repository 根目錄執行，以重用 `.wasm-oj-cache`。完整冷啟動驗收需包括 runtime 建置與首次工具鏈載入。
 3. 開始前檢查題目不可讀及獨立環境測試，並以管理者預覽完成執行與提交；確認管理端統計不含預覽提交。開始後以未登入管理工作台的瀏覽器執行、提交。
 4. 切換學號與考試，刷新深連結及上一頁，確認草稿、提交與結果隔離；驗證桌機及手機分頁。
 5. 考試結束後執行 pull、verify、upload，在管理工作台檢視內部報告，確認學生 API 無法讀取報告或考後提交摘要。
@@ -148,11 +150,29 @@ node packages/cli/bin/myriad.js --json results upload ./midterm --remote https:/
 
 本機測試調整時鐘或直接更新隔離 fixture 的截止時間只用於加速測試，不是產品 API，也不可用於正式考試修改。
 
-
 ## 建立許可與考試協作
 
-平台管理員由 `ADMIN_IDENTITIES` 指定經驗證登入服務的帳號，目前支援 NYCU OAuth；部署用 `ADMIN_TOKEN` 是獨立的平台服務憑證。助教不需要取得平台憑證。平台管理員可在管理工作台的「帳號與權限」或以 `permissions grant --provider nycu --subject USERNAME` 授予建立許可，`permissions revoke ACCOUNT_ID` 撤銷。撤銷只阻止建立新考試，既有 owner／共同管理資格保留。
+平台管理員由 `ADMIN_IDENTITIES` 指定經驗證登入服務的帳號，支援 NYCU OAuth 與透過 Firebase Authentication 的 Google 登入；部署用 `ADMIN_TOKEN` 是獨立的平台服務憑證。助教不需要取得平台憑證。平台管理員可在管理工作台的「帳號與權限」或以 `permissions grant --provider nycu --subject USERNAME` 授予建立許可；Google 使用 `permissions grant --provider google --subject GOOGLE_SUB`，請複製 Myriad 帳號資訊中的 Google 識別，不可填入 Firebase UID、email 或姓名。`permissions revoke ACCOUNT_ID` 撤銷建立許可，既有 owner／共同管理資格保留。
 
 owner 在考試權限區加入共同管理者，或使用 `members invite --exam EXAM_ID --provider nycu --subject USERNAME`。共同管理者能修改、發布、預覽、匯出與複判該考試，但無法邀請其他人，也不因此取得建立新考試的許可。`members list --exam EXAM_ID` 列出成員，`members remove ACCOUNT_ID --exam EXAM_ID` 移除；既有 session 與 API 憑證下一次請求即受新權限限制。
 
+邀請 Google 帳號時改用 `--provider google --subject GOOGLE_SUB`。請受邀者登入後提供自己的 subject；不同服務的帳號不會因同名或相同 email 合併，權限需分別授予。
+
 需要分開檢查與釋出時，先 `stage DIR`，檢查其 `revision` 與 `currentRevision`，再 `publish --exam EXAM_ID --revision REVISION --expected-revision CURRENT_REVISION`；首次發布以 `none` 代表尚無目前版本。這些命令皆需 `--remote` 與個人憑證。`deploy` 是相同兩步的組合操作。所有資料的更新由使用者主動操作，管理者介面不做自動輪詢。
+
+## 起始程式碼與實作要求
+
+每題的 `problem.json` 可加入兩個選用欄位，兩者都隨 bundle 上傳及匯出：
+
+```json
+{
+  "template": "#include <stdio.h>\n\nint solve(int *values, int n) {\n    // 完成實作\n}\n",
+  "semanticCheck": "必須以指標走訪陣列，不能使用陣列下標。"
+}
+```
+
+`template` 只用於沒有既有草稿的題目；省略時使用通用模板，空字串代表空白編輯器。修改模板不改變判題版本。`semanticCheck` 最多 2,000 個 Unicode 字元，修改條件會改變題目版本。
+
+有實作要求的提交會並行進行瀏覽器測資執行與 Worker 上的 OpenAI 語意檢查，兩邊都保存結果後才結算。模型未通過時保留測資結果與原因，該次得分為零；服務失敗則保留結果，讓使用者在提交有效期間重試。管理者可查看原始碼與模型原因；本機複判只重新執行測資，保留已有的語意判定。
+
+部署者需先設定 `OPENAI_API_KEY` 才能發布帶有實作要求的題目。資料傳送範圍與設定見 [部署指南](deployment.md#openai-實作要求檢查)。應使用實際模型驗證符合及違反要求的合成範例，並由管理者審視自動判斷。

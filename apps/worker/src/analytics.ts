@@ -1,17 +1,23 @@
 import type { AppContext, Env } from "./core.js";
+import type { IdentityKind } from "@myriad/shared";
 const DEFAULT_HOST = "https://us.i.posthog.com";
 type Properties = Record<string, unknown>;
 /** Exam venues may allow only this origin, so the browser reaches PostHog through it. */
 export async function proxyPostHog(c: AppContext): Promise<Response> {
+  if (!c.env.POSTHOG_KEY) return c.notFound();
   const host = new URL(c.env.POSTHOG_HOST ?? DEFAULT_HOST);
   const path = c.req.path.slice("/ingest".length) || "/";
   // Scripts and remote config are served from the region's asset host.
   if (/^\/(static|array)\//.test(path))
     host.hostname = host.hostname.replace(/^(\w+)\.i\./, "$1-assets.i.");
-  const url = new URL(path + new URL(c.req.url).search, host);
+  // Assign the path separately so a leading // cannot replace the upstream host.
+  const url = new URL(host);
+  url.pathname = path;
+  url.search = new URL(c.req.url).search;
   const headers = new Headers(c.req.raw.headers);
-  // Our session cookies stay on our origin.
+  // Application credentials stay on our origin.
   headers.delete("cookie");
+  headers.delete("authorization");
   headers.delete("host");
   const ip = c.req.header("CF-Connecting-IP");
   if (ip) headers.set("X-Forwarded-For", ip);
@@ -27,7 +33,7 @@ export async function proxyPostHog(c: AppContext): Promise<Response> {
 }
 /**
  * A stable pseudonym for a person: PostHog never receives student IDs, and the
- * same NYCU user is one person whether studying or teaching.
+ * same verified account is one person whether studying or teaching.
  */
 export async function analyticsId(
   env: Env,
@@ -53,7 +59,7 @@ export async function analyticsId(
 /** Guests are unverified, so their events never create person profiles. */
 export async function participantDistinct(
   env: Env,
-  kind: "guest" | "nycu",
+  kind: IdentityKind,
   student: string,
 ): Promise<Properties & { distinct_id: string }> {
   return {

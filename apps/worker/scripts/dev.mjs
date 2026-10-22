@@ -1,4 +1,4 @@
-// Runs `wrangler dev` on the port of APP_ORIGIN in .dev.vars, so local NYCU
+// Runs `wrangler dev` on the port of APP_ORIGIN in .dev.vars, so local OAuth
 // login returns to the address the browser is actually using.
 import { readFileSync } from "node:fs";
 import { spawn } from "node:child_process";
@@ -9,17 +9,10 @@ try {
     .match(/^APP_ORIGIN=(.+)$/m)?.[1]
     ?.trim();
   if (origin) port = new URL(origin).port || port;
-} catch {
-  // Without .dev.vars, wrangler's local defaults apply.
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
 }
-const args = [
-  "dev",
-  "--env",
-  "local",
-  "--port",
-  port,
-  ...process.argv.slice(2),
-];
+const args = ["dev", "--local", "--port", port, ...process.argv.slice(2)];
 console.log(`Myriad: http://localhost:${port}`);
 const child = spawn("wrangler", args, {
   stdio: "inherit",

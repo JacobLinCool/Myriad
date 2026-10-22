@@ -12,13 +12,19 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "typescript": "^5.8.2",
-    "vitest": "^3.0.7"
+    "vitest": "^4.1.12"
+  },
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.18.0 <25"
   }
 }
